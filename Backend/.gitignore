@@ -1,0 +1,6 @@
+__pycache__
+ngrok.exe
+universe_server.pem
+venv
+texto.txt
+.env
