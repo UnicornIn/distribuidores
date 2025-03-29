@@ -39,7 +39,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 # Configuración de CORS
 origins = [
     "http://localhost:3000"
-
+    "https://distribuidores.rizosfelices.co"
+    "https://distribuidores.rizosfelices.mx"
 ]
 
 app.add_middleware(
@@ -822,6 +823,7 @@ async def cambiar_estado_pedido(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
 # ENDPOINT PARA CREAR USUARIOS CON DIFERENTES ROLES
 @app.post("/usuarios/", response_model=UserResponse)
 async def crear_usuario(
