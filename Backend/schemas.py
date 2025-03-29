@@ -122,3 +122,4 @@ class EstadisticasGeneralesResponse(BaseModel):
     total_productos: int
     total_distribuidores: int
     ventas_mensuales: float 
+
