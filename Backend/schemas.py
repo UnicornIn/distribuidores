@@ -1,9 +1,8 @@
 from pydantic import BaseModel, EmailStr, Field
-# from datetime import datetime
+from datetime import datetime
 from typing import List, Optional
 from pydantic.networks import EmailStr
 # from pydantic.types import SecretStr
-
 
 class Admin(BaseModel):
     nombre: str
@@ -59,18 +58,25 @@ class ProductUpdate(BaseModel):
     precio: float = None
     stock: int = None
     
-# Modelo Pydantic para los productos en el pedido
 class ProductoPedido(BaseModel):
-    id: str
-    nombre: str
-    precio: float
-    cantidad: int
+    id: str = Field(..., description="ID del producto")
+    cantidad: int = Field(..., gt=0, description="Cantidad del producto")
 
-# Modelo Pydantic para el pedido
 class PedidoCreate(BaseModel):
-    productos: List[ProductoPedido]
+    productos: List[ProductoPedido] = Field(..., min_items=1, description="Lista de productos")
+    direccion: str = Field(..., min_length=5, description="Dirección de entrega")
+    notas: str = Field("", description="Notas adicionales")
+
+class PedidoResponse(BaseModel):
+    id: str
+    distribuidor_id: str
+    distribuidor_nombre: str
+    distribuidor_phone: str
+    productos: List[dict]
     direccion: str
-    notas: str = None
+    notas: str
+    fecha: datetime
+    estado: str
 
 # MODELO PARA CREAR USUARIOS CON DIFERENTES ROLES
 class UserCreate(BaseModel):
@@ -109,3 +115,10 @@ class UserUpdate(BaseModel):
         None,
         description="Tipo de precio para distribuidores. Opciones: 'sin_iva', 'con_iva', 'sin_iva_internacional'"
     )
+
+# MODELO PARA RESPUESTA DE DASHBOARD
+class EstadisticasGeneralesResponse(BaseModel):
+    pedidos_totales: int
+    total_productos: int
+    total_distribuidores: int
+    ventas_mensuales: float 

@@ -1,11 +1,12 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Form
+from fastapi import FastAPI, HTTPException, Depends, status, Form, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
+from pydantic import BaseModel, ValidationError
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from email.message import EmailMessage
-from pydantic import BaseModel, ValidationError
+from jose import jwt, JWTError
 from dotenv import load_dotenv
 from bson import ObjectId
 import smtplib
@@ -38,6 +39,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 # Configuración de CORS
 origins = [
     "http://localhost:3000"
+
 ]
 
 app.add_middleware(
@@ -483,7 +485,7 @@ async def obtener_productos_disponibles(
         for producto in productos:
             print(f"🔍 Procesando producto: {producto['nombre']}")  # Debug
             producto_data = {
-                "_id": str(producto["_id"]),
+                "id": str(producto["id"]),
                 "nombre": producto["nombre"],
                 "categoria": producto["categoria"],
                 "descripcion": producto.get("descripcion", ""),
@@ -526,60 +528,85 @@ async def obtener_productos_disponibles(
 @app.post("/pedidos/")
 async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_user)):
     print("📢 Iniciando creación de pedido")
-    
+
+    # Verificar si el usuario tiene el rol de distribuidor
     if current_user["rol"] != "distribuidor":
         print("❌ Acceso denegado: Solo los distribuidores pueden crear pedidos")
         raise HTTPException(status_code=403, detail="Solo los distribuidores pueden crear pedidos")
 
-    # Obtener el distribuidor actual
+    # Obtener distribuidor actual
     distribuidor = await collection_distribuidores.find_one({"correo_electronico": current_user["email"]})
     if not distribuidor:
         print("❌ Distribuidor no encontrado")
         raise HTTPException(status_code=404, detail="Distribuidor no encontrado")
 
-    distribuidor_id = str(distribuidor["_id"])  # Convertir ObjectId a str
-    distribuidor_nombre = distribuidor["nombre"]  # Obtener el nombre del distribuidor
-    distribuidor_phone = distribuidor["phone"]  # Obtener el teléfono del distribuidor
+    distribuidor_id = str(distribuidor["_id"])
+    distribuidor_nombre = distribuidor.get("nombre", "Desconocido")
+    distribuidor_phone = distribuidor.get("phone", "No registrado")
+    distribuidor_tipo = distribuidor.get("tipo", "nacional")  # Asegurar que tiene un tipo
+
+    if "productos" not in pedido or not isinstance(pedido["productos"], list):
+        raise HTTPException(status_code=400, detail="El pedido debe contener una lista de productos")
+
+    if "direccion" not in pedido:
+        raise HTTPException(status_code=400, detail="El pedido debe incluir una dirección")
 
     productos_actualizados = []
 
-    # Verificar y descontar stock
+    # 📌 **VERIFICAR STOCK Y SELECCIONAR PRECIO**
     for producto in pedido["productos"]:
-        print(f"🔍 Verificando producto {producto['id']}")
-        producto_db = await collection_productos.find_one({"id": producto["id"]})
+        if "id" not in producto or "cantidad" not in producto:
+            print(f"❌ Producto inválido: {producto}")
+            raise HTTPException(status_code=400, detail="Cada producto debe tener un 'id' y 'cantidad'")
+
+        producto_id = producto["id"]
+        cantidad_solicitada = int(producto["cantidad"])
+
+        print(f"🔍 Verificando producto {producto_id}")
+
+        producto_db = await collection_productos.find_one({"id": producto_id})
         if not producto_db:
-            print(f"❌ Producto {producto['id']} no encontrado")
-            raise HTTPException(status_code=404, detail=f"Producto {producto['id']} no encontrado")
-        if producto_db["stock"] < producto["cantidad"]:
+            print(f"❌ Producto {producto_id} no encontrado")
+            raise HTTPException(status_code=404, detail=f"Producto {producto_id} no encontrado")
+
+        if producto_db["stock"] < cantidad_solicitada:
             print(f"❌ Stock insuficiente para {producto_db['nombre']}")
             raise HTTPException(status_code=400, detail=f"Stock insuficiente para {producto_db['nombre']}")
 
-        nuevo_stock = producto_db["stock"] - producto["cantidad"]
-        await collection_productos.update_one({"id": producto["id"]}, {"$set": {"stock": nuevo_stock}})
+        # Seleccionar el precio según el tipo de distribuidor
+        if distribuidor_tipo == "nacional":
+            precio_seleccionado = producto_db["precios"]["con_iva_colombia"]
+        else:
+            precio_seleccionado = producto_db["precios"]["internacional"]
+
+        # Actualizar stock
+        nuevo_stock = producto_db["stock"] - cantidad_solicitada
+        await collection_productos.update_one({"id": producto_id}, {"$set": {"stock": nuevo_stock}})
+
         productos_actualizados.append({
             "nombre": producto_db["nombre"],
-            "cantidad": producto["cantidad"],
-            "precio": producto_db["precio"]
+            "cantidad": cantidad_solicitada,
+            "precio": precio_seleccionado
         })
-        print(f"✅ Producto {producto['id']} actualizado con nuevo stock: {nuevo_stock}")
+        print(f"✅ Producto {producto_id} actualizado con nuevo stock: {nuevo_stock} y precio: {precio_seleccionado}")
 
-    # Crear el pedido
+    # 📌 **CREAR PEDIDO**
     pedido_id = f"PED-{datetime.now().strftime('%Y%m%d%H%M%S')}"
     nuevo_pedido = {
         "id": pedido_id,
         "distribuidor_id": distribuidor_id,
-        "distribuidor_nombre": distribuidor_nombre,  # Agregar el nombre del distribuidor
-        "distribuidor_phone": distribuidor_phone,  # Agregar el teléfono del distribuidor
+        "distribuidor_nombre": distribuidor_nombre,
+        "distribuidor_phone": distribuidor_phone,
         "productos": productos_actualizados,
         "direccion": pedido["direccion"],
-        "notas": pedido["notas"],
+        "notas": pedido.get("notas", ""),
         "fecha": datetime.now(),
         "estado": "Procesando"
     }
     result = await collection_pedidos.insert_one(nuevo_pedido)
     print(f"📦 Pedido creado con ID: {pedido_id}")
 
-    # Crear el mensaje de correo
+    # 📌 **ENVÍO DE CORREOS**
     productos_mensaje = "\n".join(
         [f"- {p['nombre']}: {p['cantidad']} x ${p['precio']:.2f}" for p in productos_actualizados]
     )
@@ -590,11 +617,9 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     <p><strong>Distribuidor:</strong> {distribuidor_nombre}</p>
     <p><strong>Teléfono:</strong> {distribuidor_phone}</p>
     <p><strong>Dirección:</strong> {pedido['direccion']}</p>
-    <p><strong>Notas:</strong> {pedido['notas']}</p>
+    <p><strong>Notas:</strong> {pedido.get("notas", "Sin notas")}</p>
     <h2>Productos:</h2>
-    <ul>
-        {productos_mensaje}
-    </ul>
+    <ul>{productos_mensaje}</ul>
     <p><strong>Total:</strong> ${total_pedido:.2f}</p>
     """
 
@@ -602,11 +627,9 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     <h1>Confirmación de Pedido: {pedido_id}</h1>
     <p>Tu pedido ha sido registrado correctamente. Aquí están los detalles:</p>
     <p><strong>Dirección:</strong> {pedido['direccion']}</p>
-    <p><strong>Notas:</strong> {pedido['notas']}</p>
+    <p><strong>Notas:</strong> {pedido.get("notas", "Sin notas")}</p>
     <h2>Productos:</h2>
-    <ul>
-        {productos_mensaje}
-    </ul>
+    <ul>{productos_mensaje}</ul>
     <p><strong>Total:</strong> ${total_pedido:.2f}</p>
     <p>Gracias por confiar en nosotros.</p>
     """
@@ -614,55 +637,15 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     # Enviar correos
     enviar_correo("rochejuan123@gmail.com", f"Nuevo pedido: {pedido_id}", mensaje_admin)
     enviar_correo(current_user["email"], f"Confirmación de pedido: {pedido_id}", mensaje_distribuidor)
-    print(f"📧 Correos de confirmación enviados para el pedido {pedido_id}")
+    print(f"📧 Correos enviados para el pedido {pedido_id}")
 
-    # Convertir el ObjectId a str para la respuesta
+    # Convertir `_id` de MongoDB a string
     nuevo_pedido["_id"] = str(result.inserted_id)
 
     return {"message": "Pedido creado exitosamente", "pedido": nuevo_pedido}
 
-# ENDPOINT PARA ACTUALIZAR EL ESTADO DE UN Producto
-@app.put("/productos/{producto_id}", response_model=ProductUpdate)
-async def actualizar_producto(
-    producto_id: str,
-    producto_actualizado: ProductUpdate,
-    current_user: Dict = Depends(get_current_user)
-):
-    # Verificar que el usuario autenticado sea un Admin
-    if current_user["rol"] != "Admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los Admin pueden actualizar productos"
-        )
 
-    # Buscar el producto en la base de datos
-    producto_existente = await collection_productos.find_one({"id": producto_id})
-    if not producto_existente:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Producto no encontrado"
-        )
 
-    # Convertir el modelo Pydantic a un diccionario y eliminar campos inmutables
-    datos_actualizados = producto_actualizado.dict(exclude_unset=True)
-    campos_inmutables = ["_id", "id"]  # Campos que no se pueden modificar
-    for campo in campos_inmutables:
-        if campo in datos_actualizados:
-            del datos_actualizados[campo]
-
-    # Actualizar el producto con los nuevos datos
-    await collection_productos.update_one(
-        {"id": producto_id},
-        {"$set": datos_actualizados}
-    )
-
-    # Obtener el producto actualizado
-    producto_actualizado_db = await collection_productos.find_one({"id": producto_id})
-
-    # Convertir ObjectId a string
-    producto_actualizado_db["_id"] = str(producto_actualizado_db["_id"])
-
-    return {"message": "Producto actualizado exitosamente", "producto": producto_actualizado_db}
 
 # Endpoint para Eliminar un Producto
 @app.delete("/productos/{producto_id}")
@@ -723,6 +706,10 @@ async def obtener_pedidos(current_user: dict = Depends(get_current_user)):
         elif rol == "produccion":
             # Obtener todos los pedidos (o los relevantes para producción)
             pedidos = await collection_pedidos.find().to_list(None)
+            
+        elif rol == "facturacion":
+            # Obtener todos los pedidos (o los relevantes para facturación)
+            pedidos = await collection_pedidos.find().to_list(None)
 
         else:
             raise HTTPException(status_code=403, detail="Rol no autorizado para ver pedidos")
@@ -780,8 +767,8 @@ async def obtener_detalles_pedido(pedido_id: str, current_user: dict = Depends(g
             if pedido["distribuidor_id"] != distribuidor_id:
                 raise HTTPException(status_code=403, detail="No tienes permisos para ver este pedido")
 
-        elif rol == "produccion":
-            # El rol de producción puede ver cualquier pedido
+        elif rol in ["produccion", "facturacion"]:
+            # Los roles de producción y facturación pueden ver cualquier pedido
             pass
 
         else:
@@ -793,6 +780,48 @@ async def obtener_detalles_pedido(pedido_id: str, current_user: dict = Depends(g
         print(f"❌ Error al obtener detalles del pedido: {e}")  # Debug
         raise HTTPException(status_code=500, detail="Error interno al obtener detalles del pedido")
 
+# ENDPOINT PARA CAMBIAR ESTADO DE PEDIDO (facturado/en camino)
+@app.put("/pedidos/{pedido_id}/estado")
+async def cambiar_estado_pedido(
+    pedido_id: str,
+    nuevo_estado: str = Body(..., embed=True),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        email = current_user["email"]
+        rol = current_user["rol"]
+
+        # Verificar permisos
+        if rol not in ["Admin", "produccion", "facturacion", "distribuidor"]:
+            raise HTTPException(status_code=403, detail="No tienes permisos para cambiar estados")
+
+        # Validar estado
+        if nuevo_estado not in ["facturado", "en camino"]:
+            raise HTTPException(status_code=400, detail="Estado no válido")
+
+        # Buscar y actualizar usando el ID personalizado (no ObjectId)
+        resultado = await collection_pedidos.update_one(
+            {"id": pedido_id},  # Buscar por tu ID personalizado
+            {"$set": {"estado": nuevo_estado}}
+        )
+
+        if resultado.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+        # Obtener pedido actualizado
+        pedido_actualizado = await collection_pedidos.find_one({"id": pedido_id})
+        
+        # Limpiar el _id de MongoDB si existe
+        if pedido_actualizado and "_id" in pedido_actualizado:
+            del pedido_actualizado["_id"]
+
+        return {
+            "mensaje": f"Estado actualizado a '{nuevo_estado}'",
+            "pedido": pedido_actualizado
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 # ENDPOINT PARA CREAR USUARIOS CON DIFERENTES ROLES
 @app.post("/usuarios/", response_model=UserResponse)
 async def crear_usuario(
@@ -1191,6 +1220,208 @@ async def eliminar_usuario(
 
     return {"message": "Usuario eliminado exitosamente"}
 
+@app.get("/validate_token")  # ← Asegúrate de que el nombre coincide
+async def validate_token(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return {"valid": True, "exp": payload.get("exp")}
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token inválido o expirado")
+
+## Endpoint de Estadísticas Generales
+@app.get("/api/estadisticas/generales")
+async def obtener_estadisticas_generales():
+    """
+    Accesible para cualquier usuario
+    """
+    try:
+        # 1. Pedidos totales
+        total_pedidos = await collection_pedidos.count_documents({})
+        
+        # 2. Cantidad de productos
+        try:
+            total_productos = await collection_productos.count_documents({
+                "activo": True,
+                "eliminado": {"$ne": True}  # Filtro adicional por si usas borrado lógico
+            })
+        except Exception as e:
+            print(f"❌ Error al contar productos: {str(e)}")
+            total_productos = 0  # Mantener 0 como valor seguro si hay error
+        
+        # 3. Cantidad de distribuidores
+        total_distribuidores = await collection_distribuidores.count_documents({})
+        
+        # 4. Ventas mensuales
+        fecha_inicio_mes = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        fecha_fin_mes = (fecha_inicio_mes + timedelta(days=32)).replace(day=1)
+        
+        pipeline_ventas = [
+            {
+                "$match": {
+                    "fecha": {"$gte": fecha_inicio_mes, "$lt": fecha_fin_mes},
+                    "estado": "facturado"
+                }
+            },
+            {"$unwind": "$productos"},
+            {
+                "$group": {
+                    "_id": None,
+                    "total_ventas": {
+                        "$sum": {"$multiply": ["$productos.cantidad", "$productos.precio"]}
+                    },
+                    "count_ventas": {"$sum": 1}  # Contar número de transacciones
+                }
+            }
+        ]
+        
+        ventas_mensuales = await collection_pedidos.aggregate(pipeline_ventas).to_list(length=1)
+        total_ventas = ventas_mensuales[0]["total_ventas"] if ventas_mensuales and "total_ventas" in ventas_mensuales[0] else 0
+        
+        return {
+            "pedidos_totales": total_pedidos,
+            "total_productos": total_productos,
+            "total_distribuidores": total_distribuidores,
+            "ventas_mensuales": total_ventas,
+            "fecha_consulta": datetime.now().isoformat()  # Para debugging
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al obtener estadísticas: {str(e)}"
+        )
+
+## Endpoint de Pedidos Recientes
+@app.get("/api/pedidos/recientes")
+async def obtener_pedidos_recientes():
+    """
+    Accesible para cualquier usuario
+    """
+    pedidos = await collection_pedidos.find({}) \
+        .sort("fecha", -1) \
+        .limit(5) \
+        .to_list(length=None)
+    
+    # Formatear respuesta
+    for pedido in pedidos:
+        pedido["id"] = str(pedido["_id"])
+        pedido["total"] = sum(p["cantidad"] * p["precio"] for p in pedido["productos"])
+        del pedido["_id"]
+    
+    return pedidos
+
+## Endpoint de Productos Populares
+@app.get("/api/productos/populares")
+async def obtener_productos_populares(current_user: dict = Depends(get_current_user)):
+    """
+    Accesible para: admin, produccion
+    Devuelve los 5 productos más vendidos en el mes actual
+    """
+    # Debug inicial
+    print(f"🔍 Iniciando consulta para {current_user['email']} (Rol: {current_user['rol']})")
+    
+    # Validación de roles
+    if current_user["rol"].lower() == "facturacion":
+        print("⛔ Acceso denegado a facturación")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tienes permisos para ver esta información"
+        )
+    
+    # Configurar fechas para el mes actual
+    hoy = datetime.now()
+    fecha_inicio_mes = hoy.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    fecha_fin_mes = (fecha_inicio_mes + timedelta(days=32)).replace(day=1)
+    print(f"📅 Rango del mes: {fecha_inicio_mes} a {fecha_fin_mes}")
+
+    # Pipeline de agregación mejorado
+    pipeline = [
+        {
+            "$match": {
+                "fecha": {
+                    "$gte": fecha_inicio_mes,
+                    "$lt": fecha_fin_mes
+                },
+                "estado": "facturado",
+                "productos": {"$exists": True, "$not": {"$size": 0}}  # Asegura que hay productos
+            }
+        },
+        {"$unwind": "$productos"},
+        {
+            "$match": {
+                "productos.id": {"$exists": True},  # Valida que tenga ID
+                "productos.cantidad": {"$gt": 0}    # Solo productos con cantidad > 0
+            }
+        },
+        {
+            "$group": {
+                "_id": "$productos.id",
+                "nombre": {"$first": "$productos.nombre"},
+                "categoria": {"$first": "$productos.categoria"},
+                "precio": {"$avg": "$productos.precio"},  # Usamos avg por si hay variaciones
+                "vendidos": {"$sum": "$productos.cantidad"},
+                "num_pedidos": {"$sum": 1}  # Para saber en cuántos pedidos apareció
+            }
+        },
+        {"$sort": {"vendidos": -1}},
+        {"$limit": 5},
+        {
+            "$lookup": {
+                "from": "productos",
+                "localField": "_id",
+                "foreignField": "id",
+                "as": "producto_info"
+            }
+        },
+        {"$unwind": "$producto_info"},
+        {
+            "$addFields": {
+                "stock": "$producto_info.stock",
+                "activo": "$producto_info.activo",
+                "imagen": "$producto_info.imagen"  # Agregar más campos si es necesario
+            }
+        },
+        {
+            "$project": {
+                "_id": 0,
+                "id": "$_id",
+                "nombre": 1,
+                "categoria": 1,
+                "precio": 1,
+                "vendidos": 1,
+                "stock": 1,
+                "activo": 1,
+                "imagen": 1,
+                "num_pedidos": 1,
+                "en_produccion": "$producto_info.en_produccion"
+            }
+        }
+    ]
+    
+    print("🔎 Ejecutando pipeline de agregación...")
+    try:
+        productos = await collection_pedidos.aggregate(pipeline).to_list(length=None)
+        print(f"✅ Productos encontrados: {len(productos)}")
+        
+        # Filtrado adicional para producción
+        if current_user["rol"].lower() == "produccion":
+            productos = [p for p in productos if p.get("en_produccion", False)]
+            print(f"🛠️ Filtrados para producción: {len(productos)}")
+        
+        # Validar si hay resultados
+        if not productos:
+            print("⚠️ No se encontraron productos populares este mes")
+            # Opcional: devolver productos aleatorios o más recientes como fallback
+            return []
+        
+        return productos
+        
+    except Exception as e:
+        print(f"❌ Error en agregación: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al obtener productos populares: {str(e)}"
+        )
 
 
 # ENDPOINT PARA TRAER LOS DATOS DEL NEGOCIO AUTENTICADO
