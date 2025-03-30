@@ -38,9 +38,8 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 # Configuración de CORS
 origins = [
-    "http://localhost:3000"
+    "http://localhost:3000",
     "https://distribuidores.rizosfelices.co"
-    "https://distribuidores.rizosfelices.mx"
 ]
 
 app.add_middleware(
