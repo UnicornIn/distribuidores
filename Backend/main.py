@@ -543,8 +543,10 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     distribuidor_id = str(distribuidor["_id"])
     distribuidor_nombre = distribuidor.get("nombre", "Desconocido")
     distribuidor_phone = distribuidor.get("phone", "No registrado")
-    distribuidor_tipo = distribuidor.get("tipo", "nacional")  # Asegurar que tiene un tipo
+    distribuidor_tipo = distribuidor.get("tipo", "nacional")
+    tipo_precio = distribuidor.get("tipo_precio", "con_iva")
 
+    # Validaciones básicas del pedido
     if "productos" not in pedido or not isinstance(pedido["productos"], list):
         raise HTTPException(status_code=400, detail="El pedido debe contener una lista de productos")
 
@@ -552,8 +554,10 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         raise HTTPException(status_code=400, detail="El pedido debe incluir una dirección")
 
     productos_actualizados = []
+    subtotal = 0
+    iva_total = 0
 
-    # 📌 **VERIFICAR STOCK Y SELECCIONAR PRECIO**
+    # Procesar cada producto del pedido
     for producto in pedido["productos"]:
         if "id" not in producto or "cantidad" not in producto:
             print(f"❌ Producto inválido: {producto}")
@@ -574,23 +578,38 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
             raise HTTPException(status_code=400, detail=f"Stock insuficiente para {producto_db['nombre']}")
 
         # Seleccionar el precio según el tipo de distribuidor
-        if distribuidor_tipo == "nacional":
+        if tipo_precio == "con_iva":
             precio_seleccionado = producto_db["precios"]["con_iva_colombia"]
+            precio_sin_iva = producto_db["precios"]["sin_iva_colombia"]
+            iva_producto = (precio_seleccionado - precio_sin_iva) * cantidad_solicitada
         else:
-            precio_seleccionado = producto_db["precios"]["internacional"]
+            precio_seleccionado = producto_db["precios"]["sin_iva_colombia"]
+            precio_sin_iva = precio_seleccionado
+            iva_producto = 0
 
         # Actualizar stock
         nuevo_stock = producto_db["stock"] - cantidad_solicitada
         await collection_productos.update_one({"id": producto_id}, {"$set": {"stock": nuevo_stock}})
 
         productos_actualizados.append({
+            "id": producto_id,
             "nombre": producto_db["nombre"],
             "cantidad": cantidad_solicitada,
-            "precio": precio_seleccionado
+            "precio": precio_seleccionado,
+            "precio_sin_iva": precio_sin_iva,
+            "iva_unitario": precio_seleccionado - precio_sin_iva if tipo_precio == "con_iva" else 0,
+            "total": precio_seleccionado * cantidad_solicitada,
+            "tipo_precio": tipo_precio
         })
-        print(f"✅ Producto {producto_id} actualizado con nuevo stock: {nuevo_stock} y precio: {precio_seleccionado}")
 
-    # 📌 **CREAR PEDIDO**
+        subtotal += precio_sin_iva * cantidad_solicitada
+        iva_total += iva_producto
+
+        print(f"✅ Producto {producto_id} actualizado con nuevo stock: {nuevo_stock}")
+
+    total_pedido = subtotal + iva_total
+
+    # Crear pedido en la base de datos
     pedido_id = f"PED-{datetime.now().strftime('%Y%m%d%H%M%S')}"
     nuevo_pedido = {
         "id": pedido_id,
@@ -601,48 +620,201 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         "direccion": pedido["direccion"],
         "notas": pedido.get("notas", ""),
         "fecha": datetime.now(),
-        "estado": "Procesando"
+        "estado": "Procesando",
+        "subtotal": subtotal,
+        "iva": iva_total,
+        "total": total_pedido,
+        "tipo_precio": tipo_precio
     }
+    
     result = await collection_pedidos.insert_one(nuevo_pedido)
     print(f"📦 Pedido creado con ID: {pedido_id}")
 
-    # 📌 **ENVÍO DE CORREOS**
-    productos_mensaje = "\n".join(
-        [f"- {p['nombre']}: {p['cantidad']} x ${p['precio']:.2f}" for p in productos_actualizados]
-    )
-    total_pedido = sum(p["cantidad"] * p["precio"] for p in productos_actualizados)
-
-    mensaje_admin = f"""
-    <h1>Nuevo Pedido: {pedido_id}</h1>
-    <p><strong>Distribuidor:</strong> {distribuidor_nombre}</p>
-    <p><strong>Teléfono:</strong> {distribuidor_phone}</p>
-    <p><strong>Dirección:</strong> {pedido['direccion']}</p>
-    <p><strong>Notas:</strong> {pedido.get("notas", "Sin notas")}</p>
-    <h2>Productos:</h2>
-    <ul>{productos_mensaje}</ul>
-    <p><strong>Total:</strong> ${total_pedido:.2f}</p>
+    # Preparar mensajes de correo
+    fecha_pedido = datetime.now().strftime("%d/%m/%Y %H:%M")
+    
+    # Plantilla CSS para los correos
+    estilo_correo = """
+    <style>
+        body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #f8f1e9; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .logo { max-width: 150px; }
+        .content { padding: 20px; background-color: #fff; border: 1px solid #e0e0e0; border-top: none; }
+        .footer { text-align: center; padding: 20px; font-size: 12px; color: #777; }
+        .product-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        .product-table th { background-color: #f8f1e9; text-align: left; padding: 10px; }
+        .product-table td { padding: 10px; border-bottom: 1px solid #e0e0e0; }
+        .totals { margin-top: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }
+        .totals-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
+        .total-final { font-weight: bold; font-size: 1.1em; border-top: 1px solid #ddd; padding-top: 10px; }
+        .status { display: inline-block; padding: 5px 10px; background-color: #e3f2fd; color: #1976d2; border-radius: 3px; }
+    </style>
     """
 
+    # Generar tabla de productos para el correo
+    productos_html = """
+    <table class="product-table">
+        <thead>
+            <tr>
+                <th>Producto</th>
+                <th>Cantidad</th>
+                <th>Precio Unitario</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+
+    for p in productos_actualizados:
+        productos_html += f"""
+        <tr>
+            <td>{p['nombre']} (ID: {p['id']})</td>
+            <td>{p['cantidad']}</td>
+            <td>${p['precio']:,.0f}</td>
+            <td>${p['total']:,.0f}</td>
+        </tr>
+        """
+        if tipo_precio == "con_iva":
+            productos_html += f"""
+            <tr style="color: #666; font-size: 0.9em;">
+                <td colspan="4">
+                    (IVA incluido: ${p['iva_unitario']:,.0f} x {p['cantidad']} = ${p['iva_unitario'] * p['cantidad']:,.0f})
+                </td>
+            </tr>
+            """
+
+    productos_html += """
+        </tbody>
+    </table>
+    """
+
+    # Sección de totales
+    totales_html = f"""
+    <div class="totals">
+        <div class="totals-row">
+            <span>Subtotal:</span>
+            <span>${subtotal:,.0f}</span>
+        </div>
+        {f'<div class="totals-row"><span>IVA (19%):</span><span>${iva_total:,.0f}</span></div>' if tipo_precio == "con_iva" else ""}
+        <div class="totals-row total-final">
+            <span>Total del Pedido:</span>
+            <span>${total_pedido:,.0f}</span>
+        </div>
+    </div>
+    """
+
+    # Mensaje para el administrador
+    mensaje_admin = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Nuevo Pedido {pedido_id}</title>
+        {estilo_correo}
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <img src="https://rizosfelicesdata.s3.us-east-2.amazonaws.com/logo+principal+rosado+letra+blanco_Mesa+de+tra+(1).png" alt="Rizos Felices" class="logo">
+                <h1>Nuevo Pedido Recibido</h1>
+            </div>
+            
+            <div class="content">
+                <h2>Detalles del Pedido</h2>
+                <p><strong>Número de Pedido:</strong> {pedido_id}</p>
+                <p><strong>Fecha y Hora:</strong> {fecha_pedido}</p>
+                <p><strong>Estado:</strong> <span class="status">Procesando</span></p>
+                
+                <h3>Información del Distribuidor</h3>
+                <p><strong>Nombre:</strong> {distribuidor_nombre}</p>
+                <p><strong>Teléfono:</strong> {distribuidor_phone}</p>
+                
+                <h3>Detalles de Entrega</h3>
+                <p><strong>Dirección:</strong> {pedido['direccion']}</p>
+                <p><strong>Notas:</strong> {pedido.get('notas', 'Ninguna')}</p>
+                
+                <h3>Productos Solicitados</h3>
+                {productos_html}
+                {totales_html}
+            </div>
+            
+            <div class="footer">
+                <p>© {datetime.now().year} Rizos Felices. Todos los derechos reservados.</p>
+                <p>Este es un correo automático, por favor no responder.</p>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+    # Mensaje para el distribuidor
     mensaje_distribuidor = f"""
-    <h1>Confirmación de Pedido: {pedido_id}</h1>
-    <p>Tu pedido ha sido registrado correctamente. Aquí están los detalles:</p>
-    <p><strong>Dirección:</strong> {pedido['direccion']}</p>
-    <p><strong>Notas:</strong> {pedido.get("notas", "Sin notas")}</p>
-    <h2>Productos:</h2>
-    <ul>{productos_mensaje}</ul>
-    <p><strong>Total:</strong> ${total_pedido:.2f}</p>
-    <p>Gracias por confiar en nosotros.</p>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Confirmación de Pedido {pedido_id}</title>
+        {estilo_correo}
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <img src="https://rizosfelicesdata.s3.us-east-2.amazonaws.com/logo+principal+rosado+letra+blanco_Mesa+de+tra+(1).png" alt="Rizos Felices" class="logo">
+                <h1>¡Gracias por tu pedido!</h1>
+            </div>
+            
+            <div class="content">
+                <p>Hemos recibido tu pedido correctamente y está siendo procesado. A continuación encontrarás los detalles:</p>
+                
+                <h2>Resumen del Pedido</h2>
+                <p><strong>Número de Pedido:</strong> {pedido_id}</p>
+                <p><strong>Fecha y Hora:</strong> {fecha_pedido}</p>
+                <p><strong>Estado:</strong> <span class="status">Procesando</span></p>
+                
+                <h3>Detalles de Entrega</h3>
+                <p><strong>Dirección:</strong> {pedido['direccion']}</p>
+                <p><strong>Notas:</strong> {pedido.get('notas', 'Ninguna')}</p>
+                
+                <h3>Productos</h3>
+                {productos_html}
+                {totales_html}
+                
+                <p style="margin-top: 20px;">
+                    <strong>Nota:</strong> Te notificaremos cuando tu pedido esté en camino. 
+                    Para cualquier consulta, puedes responder a este correo o contactarnos al teléfono de soporte.
+                </p>
+            </div>
+            
+            <div class="footer">
+                <p>© {datetime.now().year} Rizos Felices. Todos los derechos reservados.</p>
+                <p>Este es un correo automático, por favor no responder.</p>
+            </div>
+        </div>
+    </body>
+    </html>
     """
 
     # Enviar correos
-    enviar_correo("rochejuan123@gmail.com", f"Nuevo pedido: {pedido_id}", mensaje_admin)
-    enviar_correo(current_user["email"], f"Confirmación de pedido: {pedido_id}", mensaje_distribuidor)
+    enviar_correo(
+        "produccion@rizosfelices.co", 
+        f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}", 
+        mensaje_admin
+    )
+    
+    enviar_correo(
+        current_user["email"], 
+        f"✅ Confirmación de Pedido: {pedido_id}", 
+        mensaje_distribuidor
+    )
+    
     print(f"📧 Correos enviados para el pedido {pedido_id}")
 
-    # Convertir `_id` de MongoDB a string
+    # Convertir ObjectId a string para la respuesta JSON
     nuevo_pedido["_id"] = str(result.inserted_id)
 
-    return {"message": "Pedido creado exitosamente", "pedido": nuevo_pedido}
+    return {
+        "message": "Pedido creado exitosamente",
+        "pedido": nuevo_pedido
+    }
 
 
 
