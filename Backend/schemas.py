@@ -108,13 +108,10 @@ class UserUpdate(BaseModel):
     nombre: Optional[str] = None
     correo_electronico: Optional[str] = None
     rol: Optional[str] = None
-    estado: Optional[str] = None
     phone: Optional[str] = None
-    pais: Optional[str] = None
-    tipo_precio: Optional[str] = Field(
-        None,
-        description="Tipo de precio para distribuidores. Opciones: 'sin_iva', 'con_iva', 'sin_iva_internacional'"
-    )
+    estado: Optional[str] = None
+    tipo_precio: Optional[str] = None
+    contrasena: Optional[str] = None
 
 # MODELO PARA RESPUESTA DE DASHBOARD
 class EstadisticasGeneralesResponse(BaseModel):
