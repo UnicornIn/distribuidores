@@ -269,47 +269,43 @@ async def crear_producto(
 ):
     print("📢 Iniciando creación de producto")
 
-    # Verificación de administrador
+    # 1. Verificar permisos (solo admin)
     if current_user["rol"] != "Admin":
-        print("❌ Acceso denegado: Solo los administradores pueden crear productos")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Solo los administradores pueden crear productos"
+            detail="Solo administradores pueden crear productos"
         )
 
-    # Validar los datos recibidos
+    # 2. Validar datos
     try:
         producto = ProductCreate(**producto_data)
-        print(f"📢 Datos del producto validados: {producto}")
     except ValidationError as e:
-        print(f"❌ Error de validación: {e.errors()}")
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=e.errors()
         )
 
-    # Buscar al administrador
+    # 3. Obtener admin
     admin = await collection_admin.find_one({"correo_electronico": current_user["email"]})
     if not admin:
-        print("❌ Administrador no encontrado")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Administrador no encontrado"
         )
 
     admin_id = str(admin["_id"])
-    print(f"📢 ID del administrador: {admin_id}")
 
-    # Generar ID del producto
+    # 4. Generar ID secuencial desde la colección de productos
     ultimo_producto = await collection_productos.find_one(
         {"admin_id": admin_id},
-        sort=[("id", -1)]
+        sort=[("id", -1)]  # Ordena por ID descendente
     )
-    ultimo_id = int(ultimo_producto["id"][1:]) if ultimo_producto else 0
-    nuevo_id = f"P{str(ultimo_id + 1).zfill(3)}"
-    print(f"📢 Nuevo ID del producto: {nuevo_id}")
 
-    # Estructura del producto para MongoDB
+    # Calcula nuevo ID (P001, P002...)
+    ultimo_num = int(ultimo_producto["id"][1:]) if ultimo_producto else 0
+    nuevo_id = f"P{str(ultimo_num + 1).zfill(3)}"
+
+    # 5. Crear producto (sin margen de descuento)
     nuevo_producto = {
         "id": nuevo_id,
         "admin_id": admin_id,
@@ -321,58 +317,29 @@ async def crear_producto(
             "internacional": float(producto.precio_internacional),
             "fecha_actualizacion": datetime.now()
         },
-        "margenes": {
-            "descuento": float(producto.margen_descuento),
-            "tipo_codigo": int(producto.codigo_tipo) if producto.codigo_tipo else None
-        },
         "stock": int(producto.stock),
         "activo": True,
-        "creado_en": datetime.now(),
-        "actualizado_en": datetime.now()
+        "creado_en": datetime.now()
     }
-    print(f"📢 Datos del nuevo producto: {nuevo_producto}")
 
+    # 6. Insertar en MongoDB
     try:
         result = await collection_productos.insert_one(nuevo_producto)
-        print(f"📢 Resultado de inserción: {result.inserted_id}")
-        
         if not result.inserted_id:
-            print("❌ Error al insertar el producto en la base de datos")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error al crear el producto"
+                detail="Error al crear producto"
             )
 
-        # Obtener el producto creado y convertirlo a un diccionario serializable
-        producto_creado = await collection_productos.find_one({"_id": result.inserted_id})
-        print(f"📢 Producto creado: {producto_creado}")
-        
-        # Convertir ObjectId a string y formatear fechas
-        producto_creado["_id"] = str(producto_creado["_id"])
-        producto_creado["creado_en"] = producto_creado["creado_en"].isoformat()
-        producto_creado["actualizado_en"] = producto_creado["actualizado_en"].isoformat()
-        producto_creado["precios"]["fecha_actualizacion"] = producto_creado["precios"]["fecha_actualizacion"].isoformat()
-
-        # Preparar la respuesta final sin campos internos de MongoDB
-        response_data = {
-            "id": producto_creado["id"],
-            "nombre": producto_creado["nombre"],
-            "categoria": producto_creado["categoria"],
-            "precios": {
-                "sin_iva_colombia": producto_creado["precios"]["sin_iva_colombia"],
-                "con_iva_colombia": producto_creado["precios"]["con_iva_colombia"],
-                "internacional": producto_creado["precios"]["internacional"],
-                "fecha_actualizacion": producto_creado["precios"]["fecha_actualizacion"]
-            },
-            "stock": producto_creado["stock"],
-            "creado_en": producto_creado["creado_en"]
+        # 7. Respuesta simplificada
+        return {
+            "id": nuevo_id,
+            "nombre": producto.nombre,
+            "precio": producto.precio_con_iva_colombia,
+            "stock": producto.stock
         }
-        print(f"📢 Respuesta preparada: {response_data}")
-
-        return response_data
 
     except Exception as e:
-        print(f"❌ Error al crear producto: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Error al crear producto: {str(e)}"
@@ -543,7 +510,6 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     distribuidor_id = str(distribuidor["_id"])
     distribuidor_nombre = distribuidor.get("nombre", "Desconocido")
     distribuidor_phone = distribuidor.get("phone", "No registrado")
-    distribuidor_tipo = distribuidor.get("tipo", "nacional")
     tipo_precio = distribuidor.get("tipo_precio", "con_iva")
 
     # Validaciones básicas del pedido
@@ -1222,16 +1188,21 @@ async def editar_usuario(
     update_data = usuario_actualizado.dict(exclude_unset=True)
     nuevo_rol = update_data.get("rol", rol_actual)
 
-    # 5. Validaciones para tipo_precio
+    # 5. Manejo de contraseña si está en la actualización
+    if "contrasena" in update_data:
+        hashed_password = pwd_context.hash(update_data["contrasena"])
+        update_data["hashed_password"] = hashed_password
+        del update_data["contrasena"]
+        print("🔑 Contraseña actualizada (hash generado)")
+
+    # 6. Validaciones para tipo_precio
     if "tipo_precio" in update_data:
-        # 5.1 Validar que solo distribuidores pueden tener tipo_precio
         if rol_actual != "distribuidor" and nuevo_rol != "distribuidor":
             raise HTTPException(
                 status_code=400,
                 detail="El campo tipo_precio solo aplica para distribuidores"
             )
         
-        # 5.2 Validar valores permitidos
         tipos_precio_validos = ["sin_iva", "con_iva", "sin_iva_internacional"]
         if update_data["tipo_precio"] not in tipos_precio_validos:
             raise HTTPException(
@@ -1239,18 +1210,17 @@ async def editar_usuario(
                 detail=f"Tipo de precio no válido. Opciones: {tipos_precio_validos}"
             )
 
-    # 6. Manejar tipo_precio para no distribuidores
+    # 7. Manejar tipo_precio para no distribuidores
     if nuevo_rol != "distribuidor" and "tipo_precio" in update_data:
         print("⚠️ Advertencia: tipo_precio solo aplica para distribuidores")
         update_data.pop("tipo_precio")
 
     print(f"📢 Datos para actualización: {update_data}")
 
-    # 7. Verificar si hay cambio de rol
+    # 8. Verificar si hay cambio de rol
     if nuevo_rol != rol_actual:
         print(f"📢 Cambio de rol detectado: {rol_actual} -> {nuevo_rol}")
 
-        # 7.1 Validar que el nuevo rol existe
         if nuevo_rol not in ROLES_COLECCIONES:
             print(f"❌ Rol '{nuevo_rol}' no válido")
             raise HTTPException(
@@ -1258,29 +1228,21 @@ async def editar_usuario(
                 detail=f"Rol '{nuevo_rol}' no válido. Roles permitidos: {list(ROLES_COLECCIONES.keys())}"
             )
 
-        # 7.2 Obtener colección destino
         coleccion_destino = ROLES_COLECCIONES[nuevo_rol]
-
-        # 7.3 Crear nuevo documento con los datos actualizados
         nuevo_documento = {**usuario_original, **update_data}
         
-        # 7.4 Limpiar campos específicos según nuevo rol
         if nuevo_rol != "distribuidor":
             nuevo_documento.pop("tipo_precio", None)
         
         print(f"📢 Nuevo documento para colección destino: {nuevo_documento}")
 
-        # 7.5 Transacción atómica (eliminar de origen, insertar en destino)
         try:
-            # Eliminar de colección actual
             await coleccion_actual.delete_one({"id": usuario_id})
             print(f"📢 Usuario eliminado de la colección actual: {rol_actual}")
             
-            # Insertar en nueva colección
             await coleccion_destino.insert_one(nuevo_documento)
             print(f"📢 Usuario insertado en la nueva colección: {nuevo_rol}")
             
-            # Obtener el documento actualizado
             usuario_actualizado_db = await coleccion_destino.find_one({"id": usuario_id})
         except Exception as e:
             print(f"❌ Error al cambiar de colección: {str(e)}")
@@ -1289,26 +1251,27 @@ async def editar_usuario(
                 detail=f"Error al cambiar de colección: {str(e)}"
             )
     else:
-        # 8. Actualización normal (sin cambio de rol)
         print("📢 Actualización sin cambio de rol")
 
-        # Eliminar campos protegidos
         for campo in ["_id", "id", "admin_id"]:
             update_data.pop(campo, None)
 
-        # Actualizar documento
         await coleccion_actual.update_one(
             {"id": usuario_id},
             {"$set": update_data}
         )
         usuario_actualizado_db = await coleccion_actual.find_one({"id": usuario_id})
 
-    # 9. Convertir ObjectId a string para la respuesta
+    # 9. Preparar respuesta
     if usuario_actualizado_db:
         if isinstance(usuario_actualizado_db.get("_id"), ObjectId):
             usuario_actualizado_db["_id"] = str(usuario_actualizado_db["_id"])
         if isinstance(usuario_actualizado_db.get("admin_id"), ObjectId):
             usuario_actualizado_db["admin_id"] = str(usuario_actualizado_db["admin_id"])
+
+        # Eliminar campos sensibles de la respuesta
+        usuario_actualizado_db.pop("hashed_password", None)
+        usuario_actualizado_db.pop("contrasena", None)
 
     print(f"📢 Usuario actualizado: {usuario_actualizado_db}")
 
