@@ -512,11 +512,15 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     distribuidor_phone = distribuidor.get("phone", "No registrado")
     tipo_precio = distribuidor.get("tipo_precio", "con_iva")
 
+    print(f"📢 Distribuidor encontrado: {distribuidor_nombre}, Tipo de precio: {tipo_precio}")
+
     # Validaciones básicas del pedido
     if "productos" not in pedido or not isinstance(pedido["productos"], list):
+        print("❌ Pedido inválido: Falta lista de productos")
         raise HTTPException(status_code=400, detail="El pedido debe contener una lista de productos")
 
     if "direccion" not in pedido:
+        print("❌ Pedido inválido: Falta dirección")
         raise HTTPException(status_code=400, detail="El pedido debe incluir una dirección")
 
     productos_actualizados = []
@@ -535,23 +539,29 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         print(f"🔍 Verificando producto {producto_id}")
 
         producto_db = await collection_productos.find_one({"id": producto_id})
-        if not producto_db:
-            print(f"❌ Producto {producto_id} no encontrado")
-            raise HTTPException(status_code=404, detail=f"Producto {producto_id} no encontrado")
-
-        if producto_db["stock"] < cantidad_solicitada:
-            print(f"❌ Stock insuficiente para {producto_db['nombre']}")
-            raise HTTPException(status_code=400, detail=f"Stock insuficiente para {producto_db['nombre']}")
-
-        # Seleccionar el precio según el tipo de distribuidor
         if tipo_precio == "con_iva":
-            precio_seleccionado = producto_db["precios"]["con_iva_colombia"]
+            # Calculamos automáticamente el 19% de IVA sobre el precio sin IVA
             precio_sin_iva = producto_db["precios"]["sin_iva_colombia"]
-            iva_producto = (precio_seleccionado - precio_sin_iva) * cantidad_solicitada
-        else:
+            iva = precio_sin_iva * 0.19  # 19% de IVA
+            precio_seleccionado = precio_sin_iva + iva  # Precio final con IVA
+            iva_producto = iva * cantidad_solicitada  # IVA total para este producto
+
+        elif tipo_precio == "sin_iva":
+            # Precio sin IVA (para distribuidores exentos)
             precio_seleccionado = producto_db["precios"]["sin_iva_colombia"]
             precio_sin_iva = precio_seleccionado
             iva_producto = 0
+
+        elif tipo_precio == "sin_iva_internacional":
+            # Precio internacional (sin IVA)
+            precio_seleccionado = producto_db["precios"]["internacional"]
+            precio_sin_iva = precio_seleccionado
+            iva_producto = 0
+
+        else:
+            raise HTTPException(status_code=400, detail="Tipo de precio no válido")
+
+        print(f"✅ Producto {producto_id}: Precio seleccionado: {precio_seleccionado}, IVA: {iva_producto}")
 
         # Actualizar stock
         nuevo_stock = producto_db["stock"] - cantidad_solicitada
@@ -574,6 +584,8 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         print(f"✅ Producto {producto_id} actualizado con nuevo stock: {nuevo_stock}")
 
     total_pedido = subtotal + iva_total
+
+    print(f"📦 Subtotal: {subtotal}, IVA Total: {iva_total}, Total Pedido: {total_pedido}")
 
     # Crear pedido en la base de datos
     pedido_id = f"PED-{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -761,7 +773,7 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
 
     # Enviar correos
     enviar_correo(
-        "produccion@rizosfelices.co", 
+        "producciom@rizosfelices.co", 
         f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}", 
         mensaje_admin
     )
@@ -781,8 +793,6 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         "message": "Pedido creado exitosamente",
         "pedido": nuevo_pedido
     }
-
-
 
 
 # Endpoint para Eliminar un Producto
@@ -1558,6 +1568,46 @@ async def obtener_productos_populares(current_user: dict = Depends(get_current_u
             status_code=500,
             detail=f"Error al obtener productos populares: {str(e)}"
         )
+
+# Endpoint para obtener información del usuario autenticado
+@app.get("/auth/me", response_model=dict)
+async def read_user_me(current_user: dict = Depends(get_current_user)):
+    """
+    Get information of the authenticated user from distribuidores collection.
+    """
+    try:
+        # Check if user is a distribuidor
+        if current_user["rol"] != "distribuidor":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This endpoint is only for distribuidores"
+            )
+        
+        # Find user in distribuidores collection
+        user = await collection_distribuidores.find_one(
+            {"correo_electronico": current_user["email"]},
+            {"hashed_password": 0}  # Exclude password from response
+        )
+        
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found in distribuidores collection"
+            )
+            
+        # Convert ObjectId to string
+        user["_id"] = str(user["_id"])
+        user["admin_id"] = str(user["admin_id"])
+        
+        return user
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
 
 
 # ENDPOINT PARA TRAER LOS DATOS DEL NEGOCIO AUTENTICADO
