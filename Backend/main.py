@@ -6,6 +6,7 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 from email.message import EmailMessage
+from bson.errors import InvalidId
 from jose import jwt, JWTError
 from dotenv import load_dotenv
 from bson import ObjectId
@@ -15,8 +16,8 @@ import jwt
 import os
 from schemas import (
     Distribuidor, DistribuidorCreate, Admin, TokenResponse,
-    ProductCreate, ProductUpdate, UserCreate, UserResponse,
-    UserUpdate
+    ProductCreate, UserCreate, UserResponse,UserUpdate, 
+    ProductoUpdate, 
 )
 from database import (
     collection_admin, collection_distribuidores,
@@ -371,22 +372,63 @@ async def obtener_productos(current_user: dict = Depends(get_current_user)):
     return productos
 
 # Endpoint para actualizar un producto
-@app.put("/productos/{producto_id}")
-@app.patch("/productos/{producto_id}") 
-async def editar_producto(producto_id: str, datos_actualizados: dict, current_user: Dict = Depends(get_current_user)):
-    # Verificar si el usuario es administrador
+@app.patch("/productos/{producto_id}")
+async def actualizar_producto(
+    producto_id: str,
+    producto_data: ProductoUpdate,
+    current_user: dict = Depends(get_current_user)
+):
+    print(f"📢 Iniciando actualización de producto: {producto_id}")
+
+    # Verificación de administrador
     if current_user["rol"] != "Admin":
-        raise HTTPException(status_code=403, detail="Solo los administradores pueden editar productos")
+        print("❌ Acceso denegado: Solo los administradores pueden modificar productos")
+        raise HTTPException(status_code=403, detail="Solo los administradores pueden modificar productos")
 
-    # Buscar el producto en la base de datos
-    producto_existente = await collection_productos.find_one({"id": producto_id})
-    if not producto_existente:
-        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    # Obtener admin
+    admin = await collection_admin.find_one({"correo_electronico": current_user["email"]})
+    if not admin:
+        print("❌ Administrador no encontrado")
+        raise HTTPException(status_code=404, detail="Administrador no encontrado")
 
-    # Actualizar el producto con los nuevos datos
-    await collection_productos.update_one({"id": producto_id}, {"$set": datos_actualizados})
+    admin_id = str(admin["_id"])
+    print(f"📢 ID del administrador autenticado: {admin_id}")
 
-    return {"message": "Producto actualizado exitosamente"}
+    # Crear filtro de búsqueda seguro
+    filtro = {"admin_id": admin_id}
+    
+    try:
+        # Primero intentar buscar por ObjectId
+        filtro["_id"] = ObjectId(producto_id)
+        print(f"🔍 Buscando producto por ObjectId: {producto_id}")
+    except InvalidId:
+        # Si falla, buscar por código personalizado (id_custom en este ejemplo)
+        filtro["id_custom"] = producto_id
+        print(f"🔍 Buscando producto por id_custom: {producto_id}")
+
+    producto = await collection_productos.find_one(filtro)
+    if not producto:
+        print("❌ Producto no encontrado o no tienes permisos")
+        raise HTTPException(
+            status_code=404,
+            detail="Producto no encontrado o no tienes permisos"
+        )
+
+    print(f"📢 Producto encontrado: {producto}")
+
+    # Preparar datos de actualización
+    update_data = producto_data.dict(exclude_unset=True)
+    update_data["actualizado_en"] = datetime.utcnow()
+    print(f"📊 Datos para actualizar: {update_data}")
+
+    # Actualizar usando el mismo filtro
+    result = await collection_productos.update_one(filtro, {"$set": update_data})
+    if result.modified_count == 0:
+        print("⚠️ No se realizaron cambios en el producto")
+        raise HTTPException(status_code=304, detail="No se realizaron cambios")
+
+    print("✅ Producto actualizado correctamente")
+    return {"mensaje": "Producto actualizado correctamente"}
 
 # Endpoint para eliminar un producto
 @app.delete("/productos/{producto_id}")
@@ -529,39 +571,34 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
 
     # Procesar cada producto del pedido
     for producto in pedido["productos"]:
-        if "id" not in producto or "cantidad" not in producto:
+        if "id" not in producto or "cantidad" not in producto or "precio" not in producto:
             print(f"❌ Producto inválido: {producto}")
-            raise HTTPException(status_code=400, detail="Cada producto debe tener un 'id' y 'cantidad'")
+            raise HTTPException(status_code=400, detail="Cada producto debe tener 'id', 'cantidad' y 'precio'")
 
         producto_id = producto["id"]
         cantidad_solicitada = int(producto["cantidad"])
+        precio_sin_iva = float(producto["precio"])  # 💡 El precio enviado desde el frontend sin IVA
 
         print(f"🔍 Verificando producto {producto_id}")
 
         producto_db = await collection_productos.find_one({"id": producto_id})
+        if not producto_db:
+            raise HTTPException(status_code=404, detail=f"Producto con ID {producto_id} no encontrado")
+
         if tipo_precio == "con_iva":
-            # Calculamos automáticamente el 19% de IVA sobre el precio sin IVA
-            precio_sin_iva = producto_db["precios"]["sin_iva_colombia"]
-            iva = precio_sin_iva * 0.19  # 19% de IVA
-            precio_seleccionado = precio_sin_iva + iva  # Precio final con IVA
-            iva_producto = iva * cantidad_solicitada  # IVA total para este producto
+            iva = round(precio_sin_iva * 0.19, 2)
+            precio_con_iva = round(precio_sin_iva + iva, 2)
+            iva_producto = round(iva * cantidad_solicitada, 2)
 
-        elif tipo_precio == "sin_iva":
-            # Precio sin IVA (para distribuidores exentos)
-            precio_seleccionado = producto_db["precios"]["sin_iva_colombia"]
-            precio_sin_iva = precio_seleccionado
+        elif tipo_precio in ["sin_iva", "sin_iva_internacional"]:
+            precio_con_iva = precio_sin_iva
             iva_producto = 0
-
-        elif tipo_precio == "sin_iva_internacional":
-            # Precio internacional (sin IVA)
-            precio_seleccionado = producto_db["precios"]["internacional"]
-            precio_sin_iva = precio_seleccionado
-            iva_producto = 0
+            iva = 0
 
         else:
             raise HTTPException(status_code=400, detail="Tipo de precio no válido")
 
-        print(f"✅ Producto {producto_id}: Precio seleccionado: {precio_seleccionado}, IVA: {iva_producto}")
+        print(f"✅ Producto {producto_id}: Precio sin IVA: {precio_sin_iva}, IVA unitario: {iva}, Total con IVA: {precio_con_iva}")
 
         # Actualizar stock
         nuevo_stock = producto_db["stock"] - cantidad_solicitada
@@ -571,10 +608,10 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
             "id": producto_id,
             "nombre": producto_db["nombre"],
             "cantidad": cantidad_solicitada,
-            "precio": precio_seleccionado,
+            "precio": precio_con_iva,
             "precio_sin_iva": precio_sin_iva,
-            "iva_unitario": precio_seleccionado - precio_sin_iva if tipo_precio == "con_iva" else 0,
-            "total": precio_seleccionado * cantidad_solicitada,
+            "iva_unitario": iva,
+            "total": precio_con_iva * cantidad_solicitada,
             "tipo_precio": tipo_precio
         })
 
@@ -584,6 +621,7 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         print(f"✅ Producto {producto_id} actualizado con nuevo stock: {nuevo_stock}")
 
     total_pedido = subtotal + iva_total
+
 
     print(f"📦 Subtotal: {subtotal}, IVA Total: {iva_total}, Total Pedido: {total_pedido}")
 
@@ -773,7 +811,7 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
 
     # Enviar correos
     enviar_correo(
-        "producciom@rizosfelices.co", 
+        "produccion@rizosfelices.co", 
         f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}", 
         mensaje_admin
     )
@@ -793,7 +831,6 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         "message": "Pedido creado exitosamente",
         "pedido": nuevo_pedido
     }
-
 
 # Endpoint para Eliminar un Producto
 @app.delete("/productos/{producto_id}")
@@ -929,48 +966,138 @@ async def obtener_detalles_pedido(pedido_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=500, detail="Error interno al obtener detalles del pedido")
 
 # ENDPOINT PARA CAMBIAR ESTADO DE PEDIDO (facturado/en camino)
-@app.put("/pedidos/{pedido_id}/estado")
-async def cambiar_estado_pedido(
-    pedido_id: str,
-    nuevo_estado: str = Body(..., embed=True),
+@app.put("/productos/{producto_id}")
+async def actualizar_producto(
+    producto_id: str,
+    producto_data: dict,
     current_user: dict = Depends(get_current_user)
 ):
-    try:
-        email = current_user["email"]
-        rol = current_user["rol"]
+    print(f"📢 Iniciando actualización de producto: {producto_id}")
 
-        # Verificar permisos
-        if rol not in ["Admin", "produccion", "facturacion", "distribuidor"]:
-            raise HTTPException(status_code=403, detail="No tienes permisos para cambiar estados")
-
-        # Validar estado
-        if nuevo_estado not in ["facturado", "en camino"]:
-            raise HTTPException(status_code=400, detail="Estado no válido")
-
-        # Buscar y actualizar usando el ID personalizado (no ObjectId)
-        resultado = await collection_pedidos.update_one(
-            {"id": pedido_id},  # Buscar por tu ID personalizado
-            {"$set": {"estado": nuevo_estado}}
+    # 1. Verificación de permisos
+    if current_user["rol"] != "Admin":
+        print("❌ Acceso denegado: Se requieren privilegios de administrador")
+        raise HTTPException(
+            status_code=403,
+            detail="Solo los administradores pueden actualizar productos"
         )
 
-        if resultado.modified_count == 0:
-            raise HTTPException(status_code=404, detail="Pedido no encontrado")
+    # 2. Obtener ID del administrador
+    admin = await collection_admin.find_one({"correo_electronico": current_user["email"]})
+    if not admin:
+        print("❌ Administrador no encontrado en la base de datos")
+        raise HTTPException(status_code=404, detail="Administrador no encontrado")
 
-        # Obtener pedido actualizado
-        pedido_actualizado = await collection_pedidos.find_one({"id": pedido_id})
-        
-        # Limpiar el _id de MongoDB si existe
-        if pedido_actualizado and "_id" in pedido_actualizado:
-            del pedido_actualizado["_id"]
+    admin_id = str(admin["_id"])
+    print(f"📢 ID del administrador autenticado: {admin_id}")
 
-        return {
-            "mensaje": f"Estado actualizado a '{nuevo_estado}'",
-            "pedido": pedido_actualizado
+    # 3. Búsqueda del producto con manejo de errores
+    try:
+        query = {
+            "$or": [
+                {"_id": ObjectId(producto_id)} if ObjectId.is_valid(producto_id) else None,
+                {"id": producto_id}
+            ],
+            "admin_id": admin_id
+        }
+        query["$or"] = [q for q in query["$or"] if q is not None]
+
+        producto_existente = await collection_productos.find_one(query)
+        if not producto_existente:
+            print("❌ Producto no encontrado o no pertenece al administrador")
+            raise HTTPException(
+                status_code=404,
+                detail="Producto no encontrado o no tienes permisos"
+            )
+
+        print(f"📢 Producto encontrado: ID {producto_existente.get('id')}")
+
+        # 4. Estructura de márgenes por defecto
+        margenes_existente = producto_existente.get("margenes", {
+            "descuento": 0,
+            "tipo_codigo": 0  # Valor por defecto según tu estructura
+        })
+
+        # 5. Estructura de precios por defecto
+        precios_existente = producto_existente.get("precios", {
+            "sin_iva_colombia": 0,
+            "con_iva_colombia": 0,
+            "internacional": 0,
+            "fecha_actualizacion": datetime.utcnow().isoformat() + "Z"
+        })
+
+        # 6. Preparación de datos para actualización
+        update_data = {
+            # Campos principales (siempre presentes)
+            "id": producto_existente["id"],
+            "admin_id": admin_id,
+            "nombre": producto_data.get("nombre", producto_existente["nombre"]),
+            "categoria": producto_data.get("categoria", producto_existente.get("categoria", "USO SALON")),
+            
+            # Estructura de precios
+            "precios": {
+                "sin_iva_colombia": producto_data.get("precios", {}).get(
+                    "sin_iva_colombia", 
+                    precios_existente["sin_iva_colombia"]
+                ),
+                "con_iva_colombia": producto_data.get("precios", {}).get(
+                    "con_iva_colombia", 
+                    precios_existente["con_iva_colombia"]
+                ),
+                "internacional": producto_data.get("precios", {}).get(
+                    "internacional", 
+                    precios_existente["internacional"]
+                ),
+                "fecha_actualizacion": datetime.utcnow().isoformat() + "Z"
+            },
+            
+            # Estructura de márgenes
+            "margenes": {
+                "descuento": producto_data.get("margenes", {}).get(
+                    "descuento", 
+                    margenes_existente["descuento"]
+                ),
+                "tipo_codigo": producto_data.get("margenes", {}).get(
+                    "tipo_codigo", 
+                    margenes_existente["tipo_codigo"]
+                )
+            },
+            
+            # Otros campos
+            "stock": producto_data.get("stock", producto_existente.get("stock", 0)),
+            "activo": producto_data.get("activo", producto_existente.get("activo", True)),
+            
+            # Campos de timestamp
+            "creado_en": producto_existente.get("creado_en", datetime.utcnow().isoformat() + "Z"),
+            "actualizado_en": datetime.utcnow().isoformat() + "Z"
         }
 
+        print("📊 Datos preparados para actualización:", update_data)
+
+        # 7. Ejecutar actualización
+        result = await collection_productos.update_one(
+            {"_id": producto_existente["_id"]},
+            {"$set": update_data}
+        )
+        
+        if result.modified_count == 0:
+            print("⚠️ No se realizaron cambios en el producto")
+            raise HTTPException(status_code=304, detail="No se realizaron cambios")
+            
+        # 8. Obtener y devolver el producto actualizado
+        producto_actualizado = await collection_productos.find_one({"_id": producto_existente["_id"]})
+        producto_actualizado["_id"] = str(producto_actualizado["_id"])
+        
+        print("✅ Producto actualizado exitosamente")
+        return producto_actualizado
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
+        print(f"❌ Error crítico: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno al procesar la solicitud: {str(e)}"
+        )
+
 # ENDPOINT PARA CREAR USUARIOS CON DIFERENTES ROLES
 @app.post("/usuarios/", response_model=UserResponse)
 async def crear_usuario(
