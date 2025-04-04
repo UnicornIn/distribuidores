@@ -811,16 +811,23 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
 
     # Enviar correos
     enviar_correo(
-        "produccion@rizosfelices.co", 
-        f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}", 
+        "produccion@rizosfelices.co",
+        f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}",
         mensaje_admin
     )
-    
+
     enviar_correo(
-        current_user["email"], 
-        f"✅ Confirmación de Pedido: {pedido_id}", 
+        "tesoreria@rizosfelices.co",
+        f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}",
+        mensaje_admin
+    )
+
+    enviar_correo(
+        current_user["email"],
+        f"✅ Confirmación de Pedido: {pedido_id}",
         mensaje_distribuidor
     )
+
     
     print(f"📧 Correos enviados para el pedido {pedido_id}")
 
@@ -966,137 +973,47 @@ async def obtener_detalles_pedido(pedido_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=500, detail="Error interno al obtener detalles del pedido")
 
 # ENDPOINT PARA CAMBIAR ESTADO DE PEDIDO (facturado/en camino)
-@app.put("/productos/{producto_id}")
-async def actualizar_producto(
-    producto_id: str,
-    producto_data: dict,
+@app.put("/pedidos/{pedido_id}/estado")
+async def cambiar_estado_pedido(
+    pedido_id: str,
+    nuevo_estado: str = Body(..., embed=True),
     current_user: dict = Depends(get_current_user)
 ):
-    print(f"📢 Iniciando actualización de producto: {producto_id}")
-
-    # 1. Verificación de permisos
-    if current_user["rol"] != "Admin":
-        print("❌ Acceso denegado: Se requieren privilegios de administrador")
-        raise HTTPException(
-            status_code=403,
-            detail="Solo los administradores pueden actualizar productos"
-        )
-
-    # 2. Obtener ID del administrador
-    admin = await collection_admin.find_one({"correo_electronico": current_user["email"]})
-    if not admin:
-        print("❌ Administrador no encontrado en la base de datos")
-        raise HTTPException(status_code=404, detail="Administrador no encontrado")
-
-    admin_id = str(admin["_id"])
-    print(f"📢 ID del administrador autenticado: {admin_id}")
-
-    # 3. Búsqueda del producto con manejo de errores
     try:
-        query = {
-            "$or": [
-                {"_id": ObjectId(producto_id)} if ObjectId.is_valid(producto_id) else None,
-                {"id": producto_id}
-            ],
-            "admin_id": admin_id
-        }
-        query["$or"] = [q for q in query["$or"] if q is not None]
+        email = current_user["email"]
+        rol = current_user["rol"]
 
-        producto_existente = await collection_productos.find_one(query)
-        if not producto_existente:
-            print("❌ Producto no encontrado o no pertenece al administrador")
-            raise HTTPException(
-                status_code=404,
-                detail="Producto no encontrado o no tienes permisos"
-            )
+        # Verificar permisos
+        if rol not in ["Admin", "produccion", "facturacion", "distribuidor"]:
+            raise HTTPException(status_code=403, detail="No tienes permisos para cambiar estados")
 
-        print(f"📢 Producto encontrado: ID {producto_existente.get('id')}")
+        # Validar estado
+        if nuevo_estado not in ["facturado", "en camino"]:
+            raise HTTPException(status_code=400, detail="Estado no válido")
 
-        # 4. Estructura de márgenes por defecto
-        margenes_existente = producto_existente.get("margenes", {
-            "descuento": 0,
-            "tipo_codigo": 0  # Valor por defecto según tu estructura
-        })
-
-        # 5. Estructura de precios por defecto
-        precios_existente = producto_existente.get("precios", {
-            "sin_iva_colombia": 0,
-            "con_iva_colombia": 0,
-            "internacional": 0,
-            "fecha_actualizacion": datetime.utcnow().isoformat() + "Z"
-        })
-
-        # 6. Preparación de datos para actualización
-        update_data = {
-            # Campos principales (siempre presentes)
-            "id": producto_existente["id"],
-            "admin_id": admin_id,
-            "nombre": producto_data.get("nombre", producto_existente["nombre"]),
-            "categoria": producto_data.get("categoria", producto_existente.get("categoria", "USO SALON")),
-            
-            # Estructura de precios
-            "precios": {
-                "sin_iva_colombia": producto_data.get("precios", {}).get(
-                    "sin_iva_colombia", 
-                    precios_existente["sin_iva_colombia"]
-                ),
-                "con_iva_colombia": producto_data.get("precios", {}).get(
-                    "con_iva_colombia", 
-                    precios_existente["con_iva_colombia"]
-                ),
-                "internacional": producto_data.get("precios", {}).get(
-                    "internacional", 
-                    precios_existente["internacional"]
-                ),
-                "fecha_actualizacion": datetime.utcnow().isoformat() + "Z"
-            },
-            
-            # Estructura de márgenes
-            "margenes": {
-                "descuento": producto_data.get("margenes", {}).get(
-                    "descuento", 
-                    margenes_existente["descuento"]
-                ),
-                "tipo_codigo": producto_data.get("margenes", {}).get(
-                    "tipo_codigo", 
-                    margenes_existente["tipo_codigo"]
-                )
-            },
-            
-            # Otros campos
-            "stock": producto_data.get("stock", producto_existente.get("stock", 0)),
-            "activo": producto_data.get("activo", producto_existente.get("activo", True)),
-            
-            # Campos de timestamp
-            "creado_en": producto_existente.get("creado_en", datetime.utcnow().isoformat() + "Z"),
-            "actualizado_en": datetime.utcnow().isoformat() + "Z"
-        }
-
-        print("📊 Datos preparados para actualización:", update_data)
-
-        # 7. Ejecutar actualización
-        result = await collection_productos.update_one(
-            {"_id": producto_existente["_id"]},
-            {"$set": update_data}
+        # Buscar y actualizar usando el ID personalizado (no ObjectId)
+        resultado = await collection_pedidos.update_one(
+            {"id": pedido_id},  # Buscar por tu ID personalizado
+            {"$set": {"estado": nuevo_estado}}
         )
+
+        if resultado.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Pedido no encontrado")
+
+        # Obtener pedido actualizado
+        pedido_actualizado = await collection_pedidos.find_one({"id": pedido_id})
         
-        if result.modified_count == 0:
-            print("⚠️ No se realizaron cambios en el producto")
-            raise HTTPException(status_code=304, detail="No se realizaron cambios")
-            
-        # 8. Obtener y devolver el producto actualizado
-        producto_actualizado = await collection_productos.find_one({"_id": producto_existente["_id"]})
-        producto_actualizado["_id"] = str(producto_actualizado["_id"])
-        
-        print("✅ Producto actualizado exitosamente")
-        return producto_actualizado
+        # Limpiar el _id de MongoDB si existe
+        if pedido_actualizado and "_id" in pedido_actualizado:
+            del pedido_actualizado["_id"]
+
+        return {
+            "mensaje": f"Estado actualizado a '{nuevo_estado}'",
+            "pedido": pedido_actualizado
+        }
 
     except Exception as e:
-        print(f"❌ Error crítico: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error interno al procesar la solicitud: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ENDPOINT PARA CREAR USUARIOS CON DIFERENTES ROLES
 @app.post("/usuarios/", response_model=UserResponse)
