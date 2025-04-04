@@ -120,3 +120,25 @@ class EstadisticasGeneralesResponse(BaseModel):
     total_distribuidores: int
     ventas_mensuales: float 
 
+# MODELO PARA RESPUESTA DE PRODUCTOS
+class PreciosUpdate(BaseModel):
+    sin_iva_colombia: Optional[int] = None
+    con_iva_colombia: Optional[int] = None
+    internacional: Optional[int] = None
+    fecha_actualizacion: Optional[datetime] = None
+
+class MargenesUpdate(BaseModel):
+    descuento: Optional[float] = None
+    tipo_codigo: Optional[int] = None
+
+class ProductoUpdate(BaseModel):
+    id: Optional[str] = None
+    admin_id: Optional[str] = None
+    nombre: Optional[str] = None
+    categoria: Optional[str] = None
+    precios: Optional[PreciosUpdate] = None
+    margenes: Optional[MargenesUpdate] = None
+    stock: Optional[int] = None
+    activo: Optional[bool] = None
+    creado_en: Optional[datetime] = None
+    actualizado_en: Optional[datetime] = None
