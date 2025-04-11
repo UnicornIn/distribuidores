@@ -1,19 +1,22 @@
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "./ui/dropdown-menu"
-import { MoreHorizontal } from "lucide-react"
-import { Button } from "./ui/button"
+// components/userActions.tsx
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "./ui/dropdown-menu";
+import { MoreHorizontal } from "lucide-react";
+import { Button } from "./ui/button";
 
 type UserActionsProps = {
-  user: any
-  onEdit: () => void
-  onChangePassword: () => void
-  onToggleStatus: () => void
-  onDelete: () => void
-}
+  user: {
+    estado: "Activo" | "Inactivo";
+  };
+  onEdit: () => void;
+  onChangePassword?: () => void; // Hacerlo opcional
+  onToggleStatus: () => void;
+  onDelete: () => void;
+};
 
 export const UserActions = ({ 
   user, 
-  onEdit, 
-  onChangePassword, 
+  // onEdit, 
+  // onChangePassword, 
   onToggleStatus, 
   onDelete 
 }: UserActionsProps) => (
@@ -25,8 +28,12 @@ export const UserActions = ({
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end">
       <DropdownMenuLabel>Acciones</DropdownMenuLabel>
-      <DropdownMenuItem onClick={onEdit}>Editar usuario</DropdownMenuItem>
-      <DropdownMenuItem onClick={onChangePassword}>Cambiar contraseña</DropdownMenuItem>
+      {/* <DropdownMenuItem onClick={onEdit}>Editar usuario</DropdownMenuItem> */}
+      {/* {onChangePassword && (
+        <DropdownMenuItem onClick={onChangePassword}>
+          Cambiar contraseña
+        </DropdownMenuItem>
+      )} */}
       <DropdownMenuItem 
         className="text-destructive"
         onClick={onToggleStatus}
@@ -41,4 +48,4 @@ export const UserActions = ({
       </DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu>
-)
+);

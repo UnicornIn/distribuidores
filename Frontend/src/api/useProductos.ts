@@ -15,7 +15,7 @@ export const useProductos = () => {
         throw new Error("No se encontró el token de autenticación");
       }
 
-      const response = await fetch("http://127.0.0.1:8000/productos/", {
+      const response = await fetch("https://api.rizosfelices.co/productos/", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -73,7 +73,7 @@ export const useProductos = () => {
         throw new Error("No se encontró el token de autenticación");
       }
 
-      const response = await fetch(`http://127.0.0.1:8000/productos/${productoId}`, {
+      const response = await fetch(`https://api.rizosfelices.co/productos/${productoId}`, {
         method: "DELETE",
         headers: {
           Authorization: `Bearer ${token}`,
