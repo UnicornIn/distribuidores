@@ -372,64 +372,92 @@ async def obtener_productos(current_user: dict = Depends(get_current_user)):
     return productos
 
 # Endpoint para actualizar un producto
-@app.patch("/productos/{producto_id}")
+@app.patch("/productos/{producto_id}", response_model=dict)
 async def actualizar_producto(
     producto_id: str,
     producto_data: ProductoUpdate,
     current_user: dict = Depends(get_current_user)
 ):
-    print(f"📢 Iniciando actualización de producto: {producto_id}")
-
-    # Verificación de administrador
+    # 1. Verificar permisos de administrador
     if current_user["rol"] != "Admin":
-        print("❌ Acceso denegado: Solo los administradores pueden modificar productos")
-        raise HTTPException(status_code=403, detail="Solo los administradores pueden modificar productos")
-
-    # Obtener admin
-    admin = await collection_admin.find_one({"correo_electronico": current_user["email"]})
-    if not admin:
-        print("❌ Administrador no encontrado")
-        raise HTTPException(status_code=404, detail="Administrador no encontrado")
-
-    admin_id = str(admin["_id"])
-    print(f"📢 ID del administrador autenticado: {admin_id}")
-
-    # Crear filtro de búsqueda seguro
-    filtro = {"admin_id": admin_id}
-    
-    try:
-        # Primero intentar buscar por ObjectId
-        filtro["_id"] = ObjectId(producto_id)
-        print(f"🔍 Buscando producto por ObjectId: {producto_id}")
-    except InvalidId:
-        # Si falla, buscar por código personalizado (id_custom en este ejemplo)
-        filtro["id_custom"] = producto_id
-        print(f"🔍 Buscando producto por id_custom: {producto_id}")
-
-    producto = await collection_productos.find_one(filtro)
-    if not producto:
-        print("❌ Producto no encontrado o no tienes permisos")
         raise HTTPException(
-            status_code=404,
-            detail="Producto no encontrado o no tienes permisos"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo los administradores pueden modificar productos"
         )
 
-    print(f"📢 Producto encontrado: {producto}")
+    # 2. Obtener el administrador autenticado
+    admin = await collection_admin.find_one({"correo_electronico": current_user["email"]})
+    if not admin:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Administrador no encontrado"
+        )
 
-    # Preparar datos de actualización
-    update_data = producto_data.dict(exclude_unset=True)
-    update_data["actualizado_en"] = datetime.utcnow()
-    print(f"📊 Datos para actualizar: {update_data}")
+    admin_id = str(admin["_id"])
 
-    # Actualizar usando el mismo filtro
-    result = await collection_productos.update_one(filtro, {"$set": update_data})
+    # 3. Construir filtro de búsqueda flexible (ObjectId o id personalizado)
+    filtro = {"admin_id": admin_id}
+    if ObjectId.is_valid(producto_id):
+        filtro["_id"] = ObjectId(producto_id)
+    else:
+        filtro["id"] = producto_id
+
+    # 4. Buscar el producto a actualizar
+    producto = await collection_productos.find_one(filtro)
+    if not producto:
+        # Verificar si existe pero no pertenece a este admin
+        if await collection_productos.find_one({"id": producto_id}):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Este producto no pertenece a tu cuenta de administrador"
+            )
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Producto no encontrado"
+        )
+
+    # 5. Preparar los datos para actualizar
+    update_data = {
+        "actualizado_en": datetime.utcnow()
+    }
+
+    # Convertir el modelo Pydantic a dict y excluir campos no enviados
+    producto_dict = producto_data.dict(exclude_unset=True)
+
+    # 6. Manejar campos anidados (precios y margenes)
+    if 'precios' in producto_dict and producto_dict['precios']:
+        for key, value in producto_dict['precios'].items():
+            if value is not None:
+                update_data[f"precios.{key}"] = value
+
+    if 'margenes' in producto_dict and producto_dict['margenes']:
+        for key, value in producto_dict['margenes'].items():
+            if value is not None:
+                update_data[f"margenes.{key}"] = value
+
+    # 7. Manejar campos directos
+    campos_directos = ['nombre', 'categoria', 'stock']
+    for campo in campos_directos:
+        if campo in producto_dict and producto_dict[campo] is not None:
+            update_data[campo] = producto_dict[campo]
+
+    # 8. Realizar la actualización en MongoDB
+    result = await collection_productos.update_one(
+        filtro,
+        {"$set": update_data}
+    )
+
     if result.modified_count == 0:
-        print("⚠️ No se realizaron cambios en el producto")
-        raise HTTPException(status_code=304, detail="No se realizaron cambios")
+        raise HTTPException(
+            status_code=status.HTTP_304_NOT_MODIFIED,
+            detail="No se realizaron cambios en el producto"
+        )
 
-    print("✅ Producto actualizado correctamente")
-    return {"mensaje": "Producto actualizado correctamente"}
-
+    return {
+        "mensaje": "Producto actualizado correctamente",
+        "producto_id": producto_id
+    }
+    
 # Endpoint para eliminar un producto
 @app.delete("/productos/{producto_id}")
 async def eliminar_producto(producto_id: str, current_user: Dict = Depends(get_current_user)):
