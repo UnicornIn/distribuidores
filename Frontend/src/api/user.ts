@@ -37,7 +37,7 @@ export const useUserAPI = () => {
 
   const fetchUsers = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:8000/usuarios/", {
+      const response = await fetch("https://api.rizosfelices.co/usuarios/", {
         headers: getAuthHeader()
       })
 
@@ -53,7 +53,7 @@ export const useUserAPI = () => {
 
   const createUser = async (userData: UserCreateData) => {
     try {
-      const response = await fetch("http://127.0.0.1:8000/usuarios/", {
+      const response = await fetch("https://api.rizosfelices.co/usuarios/", {
         method: "POST",
         headers: getAuthHeader(),
         body: JSON.stringify({
@@ -77,7 +77,7 @@ export const useUserAPI = () => {
 
   const updateUser = async (userId: string, data: UserUpdateData) => {
     try {
-      const response = await fetch(`http://127.0.0.1:8000/usuarios/${userId}`, {
+      const response = await fetch(`https://api.rizosfelices.co/usuarios/${userId}`, {
         method: "PUT",
         headers: getAuthHeader(),
         body: JSON.stringify(data)
@@ -97,7 +97,7 @@ export const useUserAPI = () => {
 
   const changePassword = async (userId: string, data: PasswordChangeData) => {
     try {
-      const response = await fetch(`http://127.0.0.1:8000/usuarios/${userId}/password`, {
+      const response = await fetch(`https://api.rizosfelices.co/usuarios/${userId}/password`, {
         method: "PUT",
         headers: getAuthHeader(),
         body: JSON.stringify(data)
@@ -117,7 +117,7 @@ export const useUserAPI = () => {
 
   const toggleUserStatus = async (userId: string): Promise<Usuario> => {
     try {
-      const response = await fetch(`http://127.0.0.1:8000/usuarios/${userId}/cambiar-estado`, {
+      const response = await fetch(`https://api.rizosfelices.co/usuarios/${userId}/cambiar-estado`, {
         method: "PUT",
         headers: getAuthHeader()
       });
@@ -148,7 +148,7 @@ export const useUserAPI = () => {
   };
   const deleteUser = async (userId: string) => {
     try {
-      const response = await fetch(`http://127.0.0.1:8000/usuarios/${userId}`, {
+      const response = await fetch(`https://api.rizosfelices.co/usuarios/${userId}`, {
         method: "DELETE",
         headers: getAuthHeader()
       })

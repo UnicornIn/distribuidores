@@ -12,15 +12,15 @@ export interface Usuario {
   admin_id: string;
   pais: string;
   phone: string;
-  tipo_precio?: TipoPrecio; // Nuevo campo opcional
+  tipo_precio?: TipoPrecio;
 }
 
 export interface UserCreateData extends Omit<Usuario, "id" | "fecha_ultimo_acceso" | "admin_id"> {
   password: string;
-  tipo_precio?: TipoPrecio; // Asegurarse que esté incluido
+  tipo_precio?: TipoPrecio;
 }
 
 export interface UserUpdateData extends Partial<Omit<Usuario, "id" | "admin_id">> {
-  rol?: UsuarioRol; // Permitir actualizar el rol si es necesario
-  tipo_precio?: TipoPrecio; // Asegurarse que esté incluido
+  rol?: UsuarioRol;
+  tipo_precio?: TipoPrecio;
 }
