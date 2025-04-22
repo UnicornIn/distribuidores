@@ -1,6 +1,6 @@
-import type React from "react";
-import { useState } from "react";
+import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
+import { useAuth } from "../type/auth-context";  // Importar el contexto
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
 import { Input } from "../components/ui/input";
@@ -8,6 +8,7 @@ import { Label } from "../components/ui/label";
 import { ArrowLeft } from "lucide-react";
 
 export default function LoginPage() {
+  const { login } = useAuth();  // Obtener la función login
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,15 +23,10 @@ export default function LoginPage() {
     const password = form.querySelector<HTMLInputElement>("#password")?.value;
 
     try {
-      const response = await fetch("http://127.0.0.1:8000/token", {
+      const response = await fetch("https://api.rizosfelices.co/token", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          username: email!,
-          password: password!,
-        }),
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ username: email!, password: password! }),
       });
 
       if (!response.ok) {
@@ -39,15 +35,16 @@ export default function LoginPage() {
       }
 
       const data = await response.json();
-      localStorage.setItem("access_token", data.access_token);
+      login(data.access_token);  // Guardar el token en el contexto
+
       localStorage.setItem("rol", data.rol);
       localStorage.setItem("nombre", data.nombre);
       localStorage.setItem("pais", data.pais);
-      localStorage.setItem("email", data.email);  // Almacenar el correo electrónico
+      localStorage.setItem("email", data.email);
 
       // Redirigir según el rol
       if (data.rol === "Admin" || data.rol === "produccion" || data.rol === "facturacion") {
-        navigate("/admin/dashboard");  // Todos estos roles van al dashboard del admin
+        navigate("/admin/dashboard");
       } else if (data.rol === "distribuidor") {
         navigate("/distribuidor/pedidos");
       } else {

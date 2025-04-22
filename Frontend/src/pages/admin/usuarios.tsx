@@ -8,7 +8,7 @@ import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Input } from "../../components/ui/input";
-import { Search, PlusCircle } from "lucide-react";
+import { Search, PlusCircle, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "../../components/ui/dialog";
 import { useToast } from "../../hooks/use-toast";
 import { Label } from "../../components/ui/label";
@@ -43,12 +43,16 @@ export default function UsuariosPage() {
     pais: "",
     phone: "",
     password: "",
-    tipo_precio: "con_iva" // Añadido valor por defecto
+    tipo_precio: "con_iva"
   });
   
   const [usuarioEditando, setUsuarioEditando] = useState<Usuario | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+
+  // Estados para paginación
+  const [currentPage, setCurrentPage] = useState(1);
+  const [usersPerPage] = useState(5);
 
   // Cargar usuarios al montar el componente
   useEffect(() => {
@@ -60,6 +64,7 @@ export default function UsuariosPage() {
     try {
       const users = await fetchUsers();
       setUsuarios(users);
+      setCurrentPage(1); // Resetear a la primera página
     } catch (error) {
       toast({
         title: "Error",
@@ -75,8 +80,8 @@ export default function UsuariosPage() {
   const handleCreateUser = async () => {
     try {
       setIsLoading(true);
-      const newUser = await createUser(nuevoUsuario);
-      setUsuarios([...usuarios, newUser]);
+      await createUser(nuevoUsuario);
+      await loadUsers(); // Recargar usuarios después de crear
       setDialogOpen(false);
       setNuevoUsuario({
         nombre: "",
@@ -86,7 +91,7 @@ export default function UsuariosPage() {
         pais: "",
         phone: "",
         password: "",
-        tipo_precio: "con_iva" // Resetear con valor por defecto
+        tipo_precio: "con_iva"
       });
       toast({
         title: "✅ Usuario creado",
@@ -109,7 +114,6 @@ export default function UsuariosPage() {
     
     try {
       setIsLoading(true);
-      // Crear objeto de actualización
       const updateData: UserUpdateData & { rol?: UsuarioRol; tipo_precio?: string } = {
         nombre: usuarioEditando.nombre,
         phone: usuarioEditando.phone,
@@ -119,9 +123,8 @@ export default function UsuariosPage() {
         tipo_precio: usuarioEditando.tipo_precio
       };
 
-      const updatedUser = await updateUser(usuarioEditando.id, updateData);
-
-      setUsuarios(usuarios.map(u => u.id === updatedUser.id ? updatedUser : u));
+      await updateUser(usuarioEditando.id, updateData);
+      await loadUsers(); // Recargar usuarios después de editar
       setEditDialogOpen(false);
       toast({
         title: "✅ Usuario actualizado",
@@ -149,6 +152,7 @@ export default function UsuariosPage() {
         newPassword
       });
       
+      await loadUsers(); // Recargar usuarios después de cambiar contraseña
       setPasswordDialogOpen(false);
       setCurrentPassword("");
       setNewPassword("");
@@ -171,11 +175,11 @@ export default function UsuariosPage() {
   const handleToggleStatus = async (userId: string) => {
     try {
       setIsLoading(true);
-      const updatedUser = await toggleUserStatus(userId);
-      setUsuarios(usuarios.map(u => u.id === updatedUser.id ? updatedUser : u));
+      await toggleUserStatus(userId);
+      await loadUsers(); // Recargar usuarios después de cambiar estado
       toast({
-        title: updatedUser.estado === "Activo" ? "✅ Usuario activado" : "⛔ Usuario desactivado",
-        description: `Estado actualizado a ${updatedUser.estado}`,
+        title: "✅ Estado actualizado",
+        description: "El estado del usuario fue actualizado",
         variant: "default"
       });
     } catch (error: any) {
@@ -193,7 +197,7 @@ export default function UsuariosPage() {
     try {
       setIsLoading(true);
       await deleteUser(userId);
-      setUsuarios(usuarios.filter(u => u.id !== userId));
+      await loadUsers(); // Recargar usuarios después de eliminar
       toast({
         title: "✅ Usuario eliminado",
         description: "El usuario fue eliminado del sistema",
@@ -218,6 +222,18 @@ export default function UsuariosPage() {
     usuario.rol.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Lógica de paginación
+  const indexOfLastUser = currentPage * usersPerPage;
+  const indexOfFirstUser = indexOfLastUser - usersPerPage;
+  const currentUsers = filteredUsuarios.slice(indexOfFirstUser, indexOfLastUser);
+  const totalPages = Math.ceil(filteredUsuarios.length / usersPerPage);
+
+  const paginate = (pageNumber: number) => setCurrentPage(pageNumber);
+  const nextPage = () => setCurrentPage(prev => Math.min(prev + 1, totalPages));
+  const prevPage = () => setCurrentPage(prev => Math.max(prev - 1, 1));
+  const firstPage = () => setCurrentPage(1);
+  const lastPage = () => setCurrentPage(totalPages);
+
   // Helpers para renderizado
   const getRolBadge = (rol: UsuarioRol) => {
     const rolesConfig = {
@@ -241,6 +257,36 @@ export default function UsuariosPage() {
     );
   };
 
+  // Generar números de página para mostrar
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisiblePages = 5;
+
+    if (totalPages <= maxVisiblePages) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i);
+      }
+    } else {
+      const half = Math.floor(maxVisiblePages / 2);
+      let start = currentPage - half;
+      let end = currentPage + half;
+
+      if (start < 1) {
+        start = 1;
+        end = maxVisiblePages;
+      } else if (end > totalPages) {
+        end = totalPages;
+        start = totalPages - maxVisiblePages + 1;
+      }
+
+      for (let i = start; i <= end; i++) {
+        pages.push(i);
+      }
+    }
+
+    return pages;
+  };
+
   return (
     <div className="container mx-auto p-4 md:p-6">
       {/* Encabezado y barra de búsqueda */}
@@ -257,7 +303,10 @@ export default function UsuariosPage() {
               placeholder="Buscar usuarios..."
               className="pl-8 md:w-[300px]"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1); // Resetear a la primera página al buscar
+              }}
             />
           </div>
           <Button className="gap-2" onClick={() => setDialogOpen(true)}>
@@ -273,6 +322,11 @@ export default function UsuariosPage() {
           <CardTitle>Usuarios del Sistema</CardTitle>
           <CardDescription>
             {isLoading ? "Cargando..." : `${filteredUsuarios.length} usuarios encontrados`}
+            {filteredUsuarios.length > usersPerPage && (
+              <span className="ml-2">
+                (Mostrando {indexOfFirstUser + 1}-{Math.min(indexOfLastUser, filteredUsuarios.length)})
+              </span>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -281,71 +335,128 @@ export default function UsuariosPage() {
               <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Teléfono</TableHead>
-                  <TableHead>Rol</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Tipo Precio</TableHead>
-                  <TableHead>Último Acceso</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredUsuarios.length > 0 ? (
-                  filteredUsuarios.map((usuario) => (
-                    <TableRow key={usuario.id}>
-                      <TableCell className="font-medium">{usuario.id}</TableCell>
-                      <TableCell>{usuario.nombre}</TableCell>
-                      <TableCell>{usuario.correo_electronico}</TableCell>
-                      <TableCell>{usuario.phone || "N/A"}</TableCell>
-                      <TableCell>{getRolBadge(usuario.rol)}</TableCell>
-                      <TableCell>{getEstadoBadge(usuario.estado)}</TableCell>
-                      <TableCell>
-                        {usuario.rol === "distribuidor" ? (
-                          <Badge variant="outline">
-                            {usuario.tipo_precio || "No especificado"}
-                          </Badge>
-                        ) : (
-                          "N/A"
-                        )}
-                      </TableCell>
-                      <TableCell>{usuario.fecha_ultimo_acceso || "Nunca"}</TableCell>
-                      <TableCell className="text-right">
-                        <UserActions
-                          user={usuario}
-                          onEdit={() => {
-                            setUsuarioEditando(usuario);
-                            setEditDialogOpen(true);
-                          }}
-                          onChangePassword={() => {
-                            setUsuarioEditando(usuario);
-                            setPasswordDialogOpen(true);
-                          }}
-                          onToggleStatus={() => handleToggleStatus(usuario.id)}
-                          onDelete={() => handleDeleteUser(usuario.id)}
-                        />
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Teléfono</TableHead>
+                    <TableHead>Rol</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Tipo Precio</TableHead>
+                    <TableHead>Último Acceso</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {currentUsers.length > 0 ? (
+                    currentUsers.map((usuario) => (
+                      <TableRow key={usuario.id}>
+                        <TableCell className="font-medium">{usuario.id}</TableCell>
+                        <TableCell>{usuario.nombre}</TableCell>
+                        <TableCell>{usuario.correo_electronico}</TableCell>
+                        <TableCell>{usuario.phone || "N/A"}</TableCell>
+                        <TableCell>{getRolBadge(usuario.rol)}</TableCell>
+                        <TableCell>{getEstadoBadge(usuario.estado)}</TableCell>
+                        <TableCell>
+                          {usuario.rol === "distribuidor" ? (
+                            <Badge variant="outline">
+                              {usuario.tipo_precio || "No especificado"}
+                            </Badge>
+                          ) : (
+                            "N/A"
+                          )}
+                        </TableCell>
+                        <TableCell>{usuario.fecha_ultimo_acceso || "Nunca"}</TableCell>
+                        <TableCell className="text-right">
+                          <UserActions
+                            user={usuario}
+                            onEdit={() => {
+                              setUsuarioEditando(usuario);
+                              setEditDialogOpen(true);
+                            }}
+                            onChangePassword={() => {
+                              setUsuarioEditando(usuario);
+                              setPasswordDialogOpen(true);
+                            }}
+                            onToggleStatus={() => handleToggleStatus(usuario.id)}
+                            onDelete={() => handleDeleteUser(usuario.id)}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center h-24">
+                        No se encontraron usuarios
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={9} className="text-center h-24">
-                      No se encontraron usuarios
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+                  )}
+                </TableBody>
+              </Table>
+
+              {/* Paginación */}
+              {filteredUsuarios.length > usersPerPage && (
+                <div className="flex items-center justify-between px-2 pt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Página {currentPage} de {totalPages}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={firstPage}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronsLeft className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={prevPage}
+                      disabled={currentPage === 1}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <div className="flex items-center gap-1">
+                      {getPageNumbers().map((number) => (
+                        <Button
+                          key={number}
+                          variant={currentPage === number ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => paginate(number)}
+                        >
+                          {number}
+                        </Button>
+                      ))}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={nextPage}
+                      disabled={currentPage === totalPages}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={lastPage}
+                      disabled={currentPage === totalPages}
+                    >
+                      <ChevronsRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
 
-      {/* Diálogo para nuevo usuario */}
+      {/* Diálogos */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
@@ -367,7 +478,6 @@ export default function UsuariosPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo para editar usuario */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
         <DialogContent className="max-w-4xl">
           <DialogHeader>
@@ -391,7 +501,6 @@ export default function UsuariosPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Diálogo para cambiar contraseña */}
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
         <DialogContent>
           <DialogHeader>

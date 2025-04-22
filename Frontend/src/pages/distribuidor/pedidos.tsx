@@ -36,7 +36,7 @@ export default function PedidosPage() {
           throw new Error("No se encontró el token de autenticación");
         }
 
-        const response = await fetch("http://127.0.0.1:8000/pedidos/", {
+        const response = await fetch("https://api.rizosfelices.co/pedidos/", {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -58,9 +58,9 @@ export default function PedidosPage() {
     fetchPedidos();
   }, []);
 
-  // Función para calcular el total de un pedido
+  // Función para calcular el total de un pedido (ahora devuelve un número entero)
   const calcularTotal = (productos: Producto[]) => {
-    return productos.reduce((total, producto) => total + producto.precio * producto.cantidad, 0);
+    return Math.round(productos.reduce((total, producto) => total + producto.precio * producto.cantidad, 0));
   };
 
   const getEstadoBadge = (estado: string) => {
@@ -83,14 +83,14 @@ export default function PedidosPage() {
             Entregado
           </Badge>
         );
-      case "Procesando": // Agregar este caso
+      case "Procesando":
         return (
           <Badge variant="outline" className="bg-purple-100 text-purple-800">
             Procesando
           </Badge>
         );
       default:
-        return <Badge variant="outline">{estado}</Badge>; // Muestra el estado si no coincide con ningún caso
+        return <Badge variant="outline">{estado}</Badge>;
     }
   };
 
@@ -158,7 +158,7 @@ export default function PedidosPage() {
                           <TableCell>
                             {pedido.productos.map((producto) => `${producto.nombre} (x${producto.cantidad})`).join(", ")}
                           </TableCell>
-                          <TableCell>${total.toFixed(2)}</TableCell>
+                          <TableCell>${total}</TableCell>
                           <TableCell>{getEstadoBadge(pedido.estado)}</TableCell>
                           <TableCell className="text-right">
                             <Link to={`/distribuidor/pedidos/${pedido.id}`}>
@@ -193,7 +193,7 @@ export default function PedidosPage() {
                         {pedido.productos.map((producto) => `${producto.nombre} (x${producto.cantidad})`).join(", ")}
                       </div>
                       <div>
-                        <span className="font-medium">Total:</span> ${total.toFixed(2)}
+                        <span className="font-medium">Total:</span> ${total}
                       </div>
                       <div>
                         <span className="font-medium">Estado:</span> {getEstadoBadge(pedido.estado)}

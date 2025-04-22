@@ -11,17 +11,21 @@ import { useToast } from "../hooks/use-toast";
 const productoSchema = z.object({
   nombre: z.string().min(1, "Nombre es requerido"),
   categoria: z.string().min(1, "Categoría es requerida"),
-  precio_sin_iva_colombia: z.number().min(1000, "Mínimo $1.000").int("Debe ser valor entero"),
-  precio_con_iva_colombia: z.number().min(1000, "Mínimo $1.000").int("Debe ser valor entero"),
-  precio_internacional: z.number().min(1000, "Mínimo $1.000").int("Debe ser valor entero"),
+  precio_sin_iva_colombia: z.number().min(1000, "Mínimo $1.000"),
+  precio_con_iva_colombia: z.number().min(1000, "Mínimo $1.000"),
+  precio_internacional: z.number().min(4, "Mínimo $4 USD"),
   stock: z.number().min(0, "Stock no puede ser negativo").int("Debe ser valor entero"),
-  margen_descuento: z.number().min(0).max(1, "Margen debe ser entre 0 y 1"),
-  codigo_tipo: z.number().min(0).optional(),
 });
 
 export function ProductoCreateForm({ onSuccess }: { onSuccess: () => void }) {
   const { toast } = useToast();
-  const { register, handleSubmit, formState: { errors, isSubmitting }, setValue, watch } = useForm({
+  const { 
+    register, 
+    handleSubmit, 
+    formState: { errors, isSubmitting }, 
+    setValue, 
+    watch 
+  } = useForm({
     resolver: zodResolver(productoSchema),
     defaultValues: {
       nombre: "",
@@ -30,8 +34,6 @@ export function ProductoCreateForm({ onSuccess }: { onSuccess: () => void }) {
       precio_con_iva_colombia: 0,
       precio_internacional: 0,
       stock: 0,
-      margen_descuento: 0.45,
-      codigo_tipo: undefined
     }
   });
 
@@ -40,7 +42,7 @@ export function ProductoCreateForm({ onSuccess }: { onSuccess: () => void }) {
       const token = localStorage.getItem("access_token");
       if (!token) throw new Error("No hay token de autenticación");
 
-      const response = await fetch("http://127.0.0.1:8000/productos/", {
+      const response = await fetch("https://api.rizosfelices.co/productos/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -49,12 +51,10 @@ export function ProductoCreateForm({ onSuccess }: { onSuccess: () => void }) {
         body: JSON.stringify({
           nombre: data.nombre,
           categoria: data.categoria,
-          precio_sin_iva_colombia: Number(data.precio_sin_iva_colombia),
-          precio_con_iva_colombia: Number(data.precio_con_iva_colombia),
-          precio_internacional: Number(data.precio_internacional),
+          precio_sin_iva_colombia: data.precio_sin_iva_colombia,
+          precio_con_iva_colombia: data.precio_con_iva_colombia,
+          precio_internacional: data.precio_internacional,
           stock: Number(data.stock),
-          margen_descuento: Number(data.margen_descuento),
-          codigo_tipo: data.codigo_tipo ? Number(data.codigo_tipo) : undefined
         }),
       });
 
@@ -64,14 +64,14 @@ export function ProductoCreateForm({ onSuccess }: { onSuccess: () => void }) {
       }
 
       toast({
-        title: "Éxito",
-        description: "Producto creado correctamente",
+        title: "✅ Producto creado",
+        description: "El producto se ha registrado correctamente",
       });
       
       onSuccess();
     } catch (error: any) {
       toast({
-        title: "Error",
+        title: "❌ Error",
         description: error.message,
         variant: "destructive",
       });
@@ -79,171 +79,258 @@ export function ProductoCreateForm({ onSuccess }: { onSuccess: () => void }) {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="grid gap-6 py-4">
+    <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4 py-4">
       {/* Sección de información básica */}
-      <div className="space-y-4 p-4 border rounded-lg">
-        <h2 className="text-lg font-semibold">Información básica</h2>
+      <div className="space-y-4 p-4 border rounded-lg bg-white shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-800">Información básica</h2>
         <div className="grid gap-4">
-          <div className="grid gap-2">
-            <Label htmlFor="nombre">Nombre del Producto*</Label>
+          <div className="grid gap-1">
+            <Label htmlFor="nombre" className="text-gray-700">Nombre del Producto*</Label>
             <Input
               id="nombre"
               {...register("nombre")}
               placeholder="Ej: Aceite 120 ML"
-              className={errors.nombre ? "border-red-500" : ""}
+              className={errors.nombre ? "border-red-500" : "border-gray-300"}
             />
-            {errors.nombre && <p className="text-sm text-red-500">{String(errors.nombre.message)}</p>}
+            {errors.nombre && (
+              <p className="text-xs text-red-500 mt-1">{String(errors.nombre.message)}</p>
+            )}
           </div>
 
-          <div className="grid gap-2">
-            <Label htmlFor="categoria">Categoría*</Label>
+          <div className="grid gap-1">
+            <Label htmlFor="categoria" className="text-gray-700">Categoría*</Label>
             <Select
               onValueChange={(value) => setValue("categoria", value)}
               defaultValue=""
             >
-              <SelectTrigger className={errors.categoria ? "border-red-500" : ""}>
+              <SelectTrigger className={errors.categoria ? "border-red-500" : "border-gray-300"}>
                 <SelectValue placeholder="Selecciona una categoría" />
               </SelectTrigger>
               <SelectContent>
                 {["PLUS", "SPECIAL", "MEN", "ACCESORIO", "USO SALON"].map((cat) => (
-                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  <SelectItem key={cat} value={cat} className="hover:bg-gray-100">
+                    {cat}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {errors.categoria && <p className="text-sm text-red-500">{String(errors.categoria.message)}</p>}
+            {errors.categoria && (
+              <p className="text-xs text-red-500 mt-1">{String(errors.categoria.message)}</p>
+            )}
           </div>
         </div>
       </div>
 
       {/* Sección de precios y stock */}
-      <div className="space-y-4 p-4 border rounded-lg">
-        <h2 className="text-lg font-semibold">Precios y stock</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div className="space-y-4 p-4 border rounded-lg bg-white shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-800">Precios y stock</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Columna 1: Sin IVA Colombia */}
           <div className="space-y-4">
-            <InputCOP
+            <InputPrecio
               label="Precio Sin IVA (Colombia)*"
               value={watch("precio_sin_iva_colombia")}
               onChange={(value: number) => setValue("precio_sin_iva_colombia", value)}
               error={errors.precio_sin_iva_colombia}
-              placeholder="Ej: 40.200"
+              placeholder="1.000"
+              currency="COP"
+              minValue={1000}
+              decimalPlaces={0}
             />
             
-            <div className="grid gap-2">
-              <Label htmlFor="stock">Stock*</Label>
+            <div className="grid gap-1">
+              <Label htmlFor="stock" className="text-gray-700">Stock*</Label>
               <Input
                 id="stock"
                 type="number"
                 min="0"
                 {...register("stock", { valueAsNumber: true })}
-                className={errors.stock ? "border-red-500" : ""}
+                className={errors.stock ? "border-red-500" : "border-gray-300"}
               />
-              {errors.stock && <p className="text-sm text-red-500">{String(errors.stock.message)}</p>}
+              {errors.stock && (
+                <p className="text-xs text-red-500 mt-1">{String(errors.stock.message)}</p>
+              )}
             </div>
           </div>
 
           {/* Columna 2: Con IVA Colombia */}
           <div className="space-y-4">
-            <InputCOP
+            <InputPrecio
               label="Precio Con IVA (Colombia)*"
               value={watch("precio_con_iva_colombia")}
               onChange={(value: number) => setValue("precio_con_iva_colombia", value)}
               error={errors.precio_con_iva_colombia}
-              placeholder="Ej: 94.879"
+              placeholder="1.000"
+              currency="COP"
+              minValue={1000}
+              decimalPlaces={0}
             />
-
-            <div className="grid gap-2">
-              <Label htmlFor="margen_descuento">Margen de Descuento (%)*</Label>
-              <Input
-                id="margen_descuento"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                {...register("margen_descuento", {
-                  valueAsNumber: true,
-                  setValueAs: v => parseFloat(v) / 100
-                })}
-                placeholder="Ej: 0,45"
-                className={errors.margen_descuento ? "border-red-500" : ""}
-              />
-              {errors.margen_descuento && (
-                <p className="text-sm text-red-500">{String(errors.margen_descuento.message)}</p>
-              )}
-            </div>
           </div>
 
           {/* Columna 3: Internacional */}
           <div className="space-y-4">
-            <InputCOP
-              label="Precio Internacional*"
+            <InputPrecio
+              label="Precio Internacional(USD)*"
               value={watch("precio_internacional")}
               onChange={(value: number) => setValue("precio_internacional", value)}
               error={errors.precio_internacional}
-              placeholder="Ej: 48.124"
+              placeholder="4,20"
+              currency="USD"
+              minValue={4}
+              decimalPlaces={2}
             />
           </div>
         </div>
       </div>
 
-      {/* Sección de código de tipo */}
-      <div className="p-4 border rounded-lg">
-        <div className="grid gap-2">
-          <Label htmlFor="codigo_tipo">Código de Tipo</Label>
-          <Input
-            id="codigo_tipo"
-            type="number"
-            min="0"
-            {...register("codigo_tipo", { valueAsNumber: true })}
-          />
-        </div>
-      </div>
-
       {/* Botones */}
-      <div className="flex justify-end gap-4 pt-4">
-        <Button type="button" variant="outline" onClick={onSuccess}>
+      <div className="flex justify-end gap-4 pt-2">
+        <Button 
+          type="button" 
+          variant="outline" 
+          onClick={onSuccess}
+          className="border-gray-300 text-gray-700 hover:bg-gray-50"
+        >
           Cancelar
         </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Guardando..." : "Crear Producto"}
+        <Button 
+          type="submit" 
+          disabled={isSubmitting}
+          className="bg-primary hover:bg-primary-dark"
+        >
+          {isSubmitting ? (
+            <span className="flex items-center gap-2">
+              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Guardando...
+            </span>
+          ) : "Crear Producto"}
         </Button>
       </div>
     </form>
   );
 }
 
-// Componente InputCOP (igual que antes)
-function InputCOP({ label, value, onChange, error, placeholder }: any) {
-  const [displayValue, setDisplayValue] = useState("");
-
-  const formatValue = (inputValue: string) => {
-    const numericValue = parseInt(inputValue.replace(/\D/g, '')) || 0;
-    const formatted = new Intl.NumberFormat('es-CO').format(numericValue);
-    return { numericValue, formatted };
-  };
+// Componente InputPrecio optimizado para manejar los diferentes formatos
+function InputPrecio({ 
+  label, 
+  value, 
+  onChange, 
+  error, 
+  placeholder, 
+  currency = "COP",
+  minValue = 0,
+  decimalPlaces = 0
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+  error?: any;
+  placeholder?: string;
+  currency?: "COP" | "USD";
+  minValue?: number;
+  decimalPlaces?: number;
+}) {
+  const [inputValue, setInputValue] = useState("");
 
   useEffect(() => {
+    // Formatea el valor inicial según el tipo de moneda
     if (value !== undefined && value !== null) {
-      setDisplayValue(new Intl.NumberFormat('es-CO').format(value));
+      if (currency === "COP") {
+        // Formato COP: 1.000 (sin decimales)
+        const formatted = new Intl.NumberFormat('es-CO', {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0
+        }).format(value);
+        setInputValue(formatted);
+      } else {
+        // Formato USD: 4,20 (con coma decimal)
+        const formatted = new Intl.NumberFormat('es-CO', {
+          minimumFractionDigits: decimalPlaces,
+          maximumFractionDigits: decimalPlaces
+        }).format(value);
+        setInputValue(formatted);
+      }
     }
-  }, [value]);
+  }, [value, currency, decimalPlaces]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { numericValue, formatted } = formatValue(e.target.value);
-    onChange(numericValue);
-    setDisplayValue(formatted);
+    const rawValue = e.target.value;
+    
+    if (currency === "COP") {
+      // Para COP: solo permite números y puntos como separadores de miles
+      if (/^[\d.]*$/.test(rawValue)) {
+        // Elimina todos los puntos para el cálculo
+        const numericValue = parseFloat(rawValue.replace(/\./g, '')) || 0;
+        setInputValue(rawValue);
+        onChange(numericValue);
+      }
+    } else {
+      // Para USD: permite números y coma decimal
+      if (/^[\d,]*$/.test(rawValue)) {
+        // Reemplaza comas por puntos para el cálculo
+        const normalizedValue = rawValue.replace(',', '.');
+        const numericValue = parseFloat(normalizedValue) || 0;
+        setInputValue(rawValue);
+        onChange(numericValue);
+      }
+    }
+  };
+
+  const handleBlur = () => {
+    let numericValue = 0;
+    
+    if (currency === "COP") {
+      // Para COP: elimina puntos y convierte a número
+      numericValue = parseFloat(inputValue.replace(/\./g, '')) || 0;
+    } else {
+      // Para USD: reemplaza coma por punto y convierte
+      numericValue = parseFloat(inputValue.replace(',', '.')) || 0;
+    }
+    
+    // Asegura el valor mínimo
+    const finalValue = Math.max(numericValue, minValue);
+    
+    // Vuelve a formatear según el tipo de moneda
+    if (currency === "COP") {
+      const formatted = new Intl.NumberFormat('es-CO', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+      }).format(finalValue);
+      setInputValue(formatted);
+    } else {
+      const formatted = new Intl.NumberFormat('es-CO', {
+        minimumFractionDigits: decimalPlaces,
+        maximumFractionDigits: decimalPlaces
+      }).format(finalValue);
+      setInputValue(formatted);
+    }
+    
+    onChange(finalValue);
   };
 
   return (
-    <div className="grid gap-2">
-      <Label>{label}</Label>
-      <Input
-        value={displayValue}
-        onChange={handleChange}
-        placeholder={placeholder}
-        className={error ? "border-red-500" : ""}
-      />
-      {error && <p className="text-xs text-red-500">{error.message}</p>}
+    <div className="grid gap-1">
+      <Label className="text-gray-700 text-sm font-medium">
+        {label}
+      </Label>
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+          {currency === "COP" ? "$" : "$"}
+        </span>
+        <Input
+          value={inputValue}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          placeholder={placeholder}
+          className={`pl-10 ${error ? "border-red-500" : "border-gray-300"}`}
+        />
+      </div>
+      {error && (
+        <p className="text-xs text-red-500 mt-1">{error.message}</p>
+      )}
     </div>
   );
 }

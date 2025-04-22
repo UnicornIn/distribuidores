@@ -12,6 +12,8 @@ import AdminPedidosPage from "./pages/admin/pedidos";
 import ConfiguracionPage from "./pages/admin/configuracion";
 import UsuariosPage from "./pages/admin/usuarios";
 import AlmacenesPage from "./pages/admin/almacenes";
+import { PrivateRoute } from "./components/PrivateRoute";
+import ComfirmationPedido from "./components/ConfirmacionPedido"
 
 function App() {
   return (
@@ -19,21 +21,25 @@ function App() {
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
 
-      {/* Distribuidor routes */}
-      <Route path="/distribuidor" element={<DistribuidorLayout />}>
-        <Route path="pedidos" element={<PedidosPage />} />
-        <Route path="pedidos/nuevo" element={<NuevoPedidoPage />} />
-        <Route path="pedidos/:id" element={<DetallePedidoPage />} />
+      {/* Rutas protegidas */}
+      <Route path="/distribuidor" element={<PrivateRoute />}>
+        <Route path="" element={<DistribuidorLayout />}>
+          <Route path="pedidos" element={<PedidosPage />} />
+          <Route path="pedidos/nuevo" element={<NuevoPedidoPage />} />
+          <Route path="pedidos/:id" element={<DetallePedidoPage />} />
+          <Route path="pedidos/confirmacion" element={<ComfirmationPedido />} />
+        </Route>
       </Route>
 
-      {/* Admin routes */}
-      <Route path="/admin" element={<AdminLayout />}>
-        <Route path="dashboard" element={<AdminDashboardPage />} />
-        <Route path="productos" element={<ProductosPage />} />
-        <Route path="pedidos" element={<AdminPedidosPage />} />
-        <Route path="configuracion" element={<ConfiguracionPage />} />
-        <Route path="usuarios" element={<UsuariosPage />} />
-        <Route path="almacenes" element={<AlmacenesPage />} />
+      <Route path="/admin" element={<PrivateRoute />}>
+        <Route path="" element={<AdminLayout />}>
+          <Route path="dashboard" element={<AdminDashboardPage />} />
+          <Route path="productos" element={<ProductosPage />} />
+          <Route path="pedidos" element={<AdminPedidosPage />} />
+          <Route path="configuracion" element={<ConfiguracionPage />} />
+          <Route path="usuarios" element={<UsuariosPage />} />
+          <Route path="almacenes" element={<AlmacenesPage />} />
+        </Route>
       </Route>
     </Routes>
   );

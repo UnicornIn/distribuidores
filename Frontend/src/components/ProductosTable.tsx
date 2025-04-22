@@ -18,14 +18,22 @@ const getStockBadge = (stock: number) => {
   return <Badge className="bg-green-500 text-white">Alto</Badge>;
 };
 
-const formatPrice = (price: number) => {
+const formatPriceCOP = (price: number) => {
   if (isNaN(price)) return "$ 0";
   return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
+    style: 'decimal',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
-  }).format(price).replace("COP", "");
+  }).format(price);
+};
+
+const formatPriceUSD = (price: number) => {
+  if (isNaN(price)) return "$ 0";
+  return new Intl.NumberFormat('es-CO', {
+    style: 'decimal',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(price);
 };
 
 const formatDate = (dateString?: string) => {
@@ -88,9 +96,9 @@ export const ProductosTable = ({ productos, loading, onEdit, onDelete }: Product
                 <TableCell>
                   <Badge variant="outline">{producto.categoria}</Badge>
                 </TableCell>
-                <TableCell className="text-right">{formatPrice(producto.precios?.sin_iva_colombia || 0)}</TableCell>
-                <TableCell className="text-right">{formatPrice(producto.precios?.con_iva_colombia || 0)}</TableCell>
-                <TableCell className="text-right">{formatPrice(producto.precios?.internacional || 0)}</TableCell>
+                <TableCell className="text-right">$ {formatPriceCOP(producto.precios?.sin_iva_colombia || 0)}</TableCell>
+                <TableCell className="text-right">$ {formatPriceCOP(producto.precios?.con_iva_colombia || 0)}</TableCell>
+                <TableCell className="text-right">$ {formatPriceUSD(producto.precios?.internacional || 0)}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-2">
                     {producto.stock}
@@ -188,15 +196,15 @@ export const ProductosTable = ({ productos, loading, onEdit, onDelete }: Product
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Precio Sin IVA:</span>
-                    <span>{formatPrice(producto.precios?.sin_iva_colombia || 0)}</span>
+                    <span>$ {formatPriceCOP(producto.precios?.sin_iva_colombia || 0)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Precio Con IVA:</span>
-                    <span>{formatPrice(producto.precios?.con_iva_colombia || 0)}</span>
+                    <span>$ {formatPriceCOP(producto.precios?.con_iva_colombia || 0)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Precio Internacional:</span>
-                    <span>{formatPrice(producto.precios?.internacional || 0)}</span>
+                    <span>$ {formatPriceUSD(producto.precios?.internacional || 0)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Actualizado:</span>
