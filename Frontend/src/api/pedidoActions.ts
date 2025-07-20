@@ -6,7 +6,7 @@ export const fetchPedidos = async (): Promise<Pedido[]> => {
         const token = localStorage.getItem('access_token');
         if (!token) throw new Error('No hay token de autenticación');
         
-        const response = await fetch('https://api.rizosfelices.co/pedidos/', {
+        const response = await fetch('https://api.rizosfelices.co/orders/get-all-orders/', {
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
@@ -30,7 +30,7 @@ export const fetchPedidoById = async (id: string): Promise<Pedido> => {
         const token = localStorage.getItem('access_token');
         if (!token) throw new Error('No hay token de autenticación');
         
-        const response = await fetch(`https://api.rizosfelices.co/pedidos/${id}`, {
+        const response = await fetch(`https://api.rizosfelices.co/orders/pedidos/${id}`, {
             headers: {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
@@ -54,7 +54,7 @@ export const updateEstadoPedido = async (id: string, nuevoEstado: EstadoPedido):
         const token = localStorage.getItem('access_token');
         if (!token) throw new Error('No hay token de autenticación');
         
-        const response = await fetch(`https://api.rizosfelices.co/pedidos/${id}/estado`, {
+        const response = await fetch(`https://api.rizosfelices.co/orders/pedidos/${id}/estado`, {
             method: 'PUT',
             headers: {
                 'Authorization': `Bearer ${token}`,

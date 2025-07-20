@@ -50,7 +50,7 @@ export function AdminNav() {
 
   // Rutas adicionales para el rol de Admin
   const adminRoutes: NavRoute[] =
-    rol === "Admin"
+    rol === "Admin" || rol === "bodega"
       ? [
           {
             href: "/admin/productos",

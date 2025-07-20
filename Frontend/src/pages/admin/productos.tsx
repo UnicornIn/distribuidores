@@ -7,15 +7,22 @@ import { ProductoEditForm } from "../../components/ProductoEditForm";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Search, PlusCircle } from "lucide-react";
+import { useUser } from "../../hooks/useUser";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogTrigger
+  DialogTrigger,
 } from "../../components/ui/dialog";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "../../components/ui/card";
 
 export default function ProductosPage() {
   const {
@@ -25,11 +32,16 @@ export default function ProductosPage() {
     searchTerm,
     setSearchTerm,
     handleDeleteProduct,
-    refreshProductos
+    refreshProductos,
   } = useProductos();
 
-  const [productoEditando, setProductoEditando] = useState<Producto | null>(null);
+  const [productoEditando, setProductoEditando] = useState<Producto | null>(
+    null,
+  );
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+
+  // Obtenemos rol y cdi del hook useUser
+  const { rol: userRol, cdi: userCdi } = useUser();
 
   const handleCreateSuccess = () => {
     setCreateDialogOpen(false);
@@ -41,6 +53,20 @@ export default function ProductosPage() {
     refreshProductos();
   };
 
+  // Cálculo del stock total dinámico
+  const totalStock = filteredProductos.reduce((sum, p) => {
+    if (userRol === "Admin") {
+      return sum + (p.stock?.medellin || 0) + (p.stock?.guarne || 0);
+    } else {
+      return (
+        sum +
+        (userCdi?.toLowerCase() === "guarne"
+          ? p.stock?.guarne || 0
+          : p.stock?.medellin || 0)
+      );
+    }
+  }, 0);
+
   return (
     <div className="container mx-auto p-4 md:p-6">
       {error && (
@@ -48,11 +74,15 @@ export default function ProductosPage() {
           {error}
         </div>
       )}
-      
+
       <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-primary md:text-3xl">Gestión de Productos</h1>
-          <p className="text-muted-foreground">Administra el inventario de productos</p>
+          <h1 className="text-2xl font-bold text-primary md:text-3xl">
+            Gestión de Productos
+          </h1>
+          <p className="text-muted-foreground">
+            Administra el inventario de productos
+          </p>
         </div>
         <div className="flex flex-col gap-4 sm:flex-row">
           <div className="relative">
@@ -76,7 +106,8 @@ export default function ProductosPage() {
               <DialogHeader>
                 <DialogTitle>Añadir Nuevo Producto</DialogTitle>
                 <DialogDescription>
-                  Completa la información para añadir un nuevo producto al inventario
+                  Completa la información para añadir un nuevo producto al
+                  inventario
                 </DialogDescription>
               </DialogHeader>
               <ProductoCreateForm onSuccess={handleCreateSuccess} />
@@ -89,13 +120,13 @@ export default function ProductosPage() {
         <CardHeader>
           <CardTitle>Inventario de Productos</CardTitle>
           <CardDescription>
-            {filteredProductos.length} productos encontrados | 
-            Stock total: {filteredProductos.reduce((sum, p) => sum + p.stock, 0)} unidades
+            {filteredProductos.length} productos encontrados | Stock total:{" "}
+            {totalStock} unidades
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <ProductosTable 
-            productos={filteredProductos} 
+          <ProductosTable
+            productos={filteredProductos}
             loading={loading}
             onEdit={setProductoEditando}
             onDelete={handleDeleteProduct}
@@ -104,17 +135,22 @@ export default function ProductosPage() {
       </Card>
 
       {productoEditando && (
-        <Dialog open={!!productoEditando} onOpenChange={(open) => !open && setProductoEditando(null)}>
+        <Dialog
+          open={!!productoEditando}
+          onOpenChange={(open) => !open && setProductoEditando(null)}
+        >
           <DialogContent className="max-w-2xl">
             <DialogHeader>
-              <DialogTitle>Editar Producto: {productoEditando.nombre}</DialogTitle>
+              <DialogTitle>
+                Editar Producto: {productoEditando.nombre}
+              </DialogTitle>
               <DialogDescription>
                 Modifica la información del producto seleccionado
               </DialogDescription>
             </DialogHeader>
-            <ProductoEditForm 
-              producto={productoEditando} 
-              onSuccess={handleEditSuccess} 
+            <ProductoEditForm
+              producto={productoEditando}
+              onSuccess={handleEditSuccess}
             />
           </DialogContent>
         </Dialog>

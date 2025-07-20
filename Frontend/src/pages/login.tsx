@@ -1,14 +1,21 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "../type/auth-context";  // Importar el contexto
+import { useAuth } from "../type/auth-context";
 import { Button } from "../components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "../components/ui/card";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { ArrowLeft } from "lucide-react";
 
 export default function LoginPage() {
-  const { login } = useAuth();  // Obtener la función login
+  const { login } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +30,7 @@ export default function LoginPage() {
     const password = form.querySelector<HTMLInputElement>("#password")?.value;
 
     try {
-      const response = await fetch("https://api.rizosfelices.co/token", {
+      const response = await fetch("https://api.rizosfelices.co/auth/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({ username: email!, password: password! }),
@@ -35,17 +42,29 @@ export default function LoginPage() {
       }
 
       const data = await response.json();
-      login(data.access_token);  // Guardar el token en el contexto
+      login(data.access_token); // <-- Guardar token en contexto
 
+      // Guardar datos en localStorage
       localStorage.setItem("rol", data.rol);
       localStorage.setItem("nombre", data.nombre);
       localStorage.setItem("pais", data.pais);
       localStorage.setItem("email", data.email);
+      localStorage.setItem("cdi", data.cdi || "");
+      localStorage.setItem("tipo_precio", data.tipo_precio || "");
+      localStorage.setItem("unidades_individuales", JSON.stringify(data.unidades_individuales || false)); // <-- NUEVO
 
       // Redirigir según el rol
-      if (data.rol === "Admin" || data.rol === "produccion" || data.rol === "facturacion") {
+      if (
+        data.rol === "Admin" ||
+        data.rol === "produccion" ||
+        data.rol === "facturacion" ||
+        data.rol === "bodega"
+      ) {
         navigate("/admin/dashboard");
-      } else if (data.rol === "distribuidor") {
+      } else if (
+        data.rol === "distribuidor_nacional" ||
+        data.rol === "distribuidor_internacional"
+      ) {
         navigate("/distribuidor/pedidos");
       } else {
         throw new Error("Rol no reconocido");
@@ -66,14 +85,23 @@ export default function LoginPage() {
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
-          <CardTitle className="text-2xl font-bold text-primary">Iniciar Sesión</CardTitle>
-          <CardDescription>Accede a tu cuenta para gestionar tus pedidos</CardDescription>
+          <CardTitle className="text-2xl font-bold text-primary">
+            Iniciar Sesión
+          </CardTitle>
+          <CardDescription>
+            Accede a tu cuenta para gestionar tus pedidos
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4 pt-4">
             <div className="space-y-2">
               <Label htmlFor="email">Correo electrónico</Label>
-              <Input id="email" type="email" placeholder="tu@email.com" required />
+              <Input
+                id="email"
+                type="email"
+                placeholder="tu@email.com"
+                required
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Contraseña</Label>

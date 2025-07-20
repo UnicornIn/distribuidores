@@ -38,7 +38,7 @@ export default function UsuariosPage() {
   const [nuevoUsuario, setNuevoUsuario] = useState<UserCreateData>({
     nombre: "",
     correo_electronico: "",
-    rol: "distribuidor",
+    rol: "distribuidor_nacional", // Cambiado a "distribuidor_nacional"
     estado: "Activo",
     pais: "",
     phone: "",
@@ -86,7 +86,7 @@ export default function UsuariosPage() {
       setNuevoUsuario({
         nombre: "",
         correo_electronico: "",
-        rol: "distribuidor",
+        rol: "distribuidor_nacional", // Cambiado a "distribuidor_nacional"
         estado: "Activo",
         pais: "",
         phone: "",
@@ -114,7 +114,7 @@ export default function UsuariosPage() {
     
     try {
       setIsLoading(true);
-      const updateData: UserUpdateData & { rol?: UsuarioRol; tipo_precio?: string } = {
+      const updateData: UserUpdateData = {
         nombre: usuarioEditando.nombre,
         phone: usuarioEditando.phone,
         estado: usuarioEditando.estado,
@@ -237,9 +237,11 @@ export default function UsuariosPage() {
   // Helpers para renderizado
   const getRolBadge = (rol: UsuarioRol) => {
     const rolesConfig = {
-      distribuidor: { className: "bg-teal-100 text-teal-800", label: "Distribuidor" },
+      distribuidor_nacional: { className: "bg-teal-100 text-teal-800", label: "Distribuidor Nacional" },
+      distribuidor_internacional: { className: "bg-blue-100 text-blue-800", label: "Distribuidor Internacional" },
       produccion: { className: "bg-orange-100 text-orange-800", label: "Producción" },
-      facturacion: { className: "bg-green-100 text-green-800", label: "Facturación" }
+      facturacion: { className: "bg-green-100 text-green-800", label: "Facturación" },
+      bodega: { className: "bg-purple-100 text-purple-800", label: "Bodega" }
     };
 
     return (
@@ -361,7 +363,7 @@ export default function UsuariosPage() {
                         <TableCell>{getRolBadge(usuario.rol)}</TableCell>
                         <TableCell>{getEstadoBadge(usuario.estado)}</TableCell>
                         <TableCell>
-                          {usuario.rol === "distribuidor" ? (
+                          {(usuario.rol === "distribuidor_nacional" || usuario.rol === "distribuidor_internacional") ? (
                             <Badge variant="outline">
                               {usuario.tipo_precio || "No especificado"}
                             </Badge>

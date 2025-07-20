@@ -316,7 +316,7 @@ export default function AdminPedidosPage() {
                         </TableCell>
                         <TableCell>${formatNumber(pedido.total)}</TableCell>
                         <TableCell>{getEstadoBadge(pedido.estado)}</TableCell>
-                        {(userRole === "produccion" || userRole === "facturacion" || userRole === "Admin") && (
+                        {(userRole === "produccion" || userRole === "facturacion" || userRole === "bodega" || userRole === "Admin") && (
                           <TableCell className="text-right">
                             <PedidoActions
                               pedidoId={pedido.id}

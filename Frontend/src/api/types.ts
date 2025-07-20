@@ -1,3 +1,8 @@
+export interface Stock {
+  medellin: number;
+  guarne: number;
+}
+
 export interface Precios {
   sin_iva_colombia: number;
   con_iva_colombia: number;
@@ -16,7 +21,7 @@ export interface Producto {
   categoria: string;
   precios: Precios;
   margenes: Margenes;
-  stock: number;
+  stock: Stock;  // <-- Ahora stock es un objeto
   activo: boolean;
   creado_en?: string;
   actualizado_en?: string;

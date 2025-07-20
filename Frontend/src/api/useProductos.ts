@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Producto } from "../api/types";
+import { Producto, Stock } from "../api/types";
 
 export const useProductos = () => {
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -11,37 +11,54 @@ export const useProductos = () => {
     try {
       setLoading(true);
       const token = localStorage.getItem("access_token");
-      if (!token) {
-        throw new Error("No se encontró el token de autenticación");
-      }
+      if (!token) throw new Error("No se encontró el token de autenticación");
 
-      const response = await fetch("https://api.rizosfelices.co/productos/", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      const response = await fetch("https://api.rizosfelices.co/api/productos/", {
+        headers: { Authorization: `Bearer ${token}` },
       });
 
-      if (!response.ok) {
-        throw new Error("Error al obtener los productos");
-      }
+      if (!response.ok) throw new Error("Error al obtener los productos");
 
       const data = await response.json();
-      
-      // Transformar los datos recibidos para el nuevo formato de precios
-      const formattedProductos = data.map((producto: any) => ({
-        ...producto,
-        precios: {
-          sin_iva_colombia: Number(producto.precios?.sin_iva_colombia || 0),
-          con_iva_colombia: Number(producto.precios?.con_iva_colombia || 0),
-          internacional: Number(producto.precios?.internacional || 0),
-          fecha_actualizacion: producto.precios?.fecha_actualizacion || new Date().toISOString()
-        },
-        stock: Number(producto.stock || 0),
-        margenes: {
-          descuento: Number(producto.margenes?.descuento || 0.45),
-          tipo_codigo: producto.margenes?.tipo_codigo ? Number(producto.margenes.tipo_codigo) : null
+
+      // Obtener rol y cdi del usuario
+      const userData = JSON.parse(localStorage.getItem("user_data") || "{}");
+      const userRol = userData.rol || "Admin";
+      const userCdi = userData.cdi || null;
+
+      const formattedProductos = data.map((producto: any) => {
+        // Normalizar stock
+        const stockObj: Stock = {
+          medellin: Number(producto.stock?.medellin || 0),
+          guarne: Number(producto.stock?.guarne || 0),
+        };
+
+        // Filtrar stock según rol bodega
+        let stockVisible: Stock;
+        if (userRol === "bodega" && userCdi) {
+          stockVisible = {
+            medellin: userCdi.toLowerCase() === "medellin" ? stockObj.medellin : 0,
+            guarne: userCdi.toLowerCase() === "guarne" ? stockObj.guarne : 0,
+          };
+        } else {
+          stockVisible = stockObj;
         }
-      }));
+
+        return {
+          ...producto,
+          precios: {
+            sin_iva_colombia: Number(producto.precios?.sin_iva_colombia || 0),
+            con_iva_colombia: Number(producto.precios?.con_iva_colombia || 0),
+            internacional: Number(producto.precios?.internacional || 0),
+            fecha_actualizacion: producto.precios?.fecha_actualizacion || new Date().toISOString(),
+          },
+          stock: stockVisible,
+          margenes: {
+            descuento: Number(producto.margenes?.descuento || 0.45),
+            tipo_codigo: producto.margenes?.tipo_codigo ? Number(producto.margenes.tipo_codigo) : null,
+          },
+        };
+      });
 
       setProductos(formattedProductos);
     } catch (err) {
@@ -59,7 +76,6 @@ export const useProductos = () => {
     const nombre = producto.nombre?.toLowerCase() || "";
     const categoria = producto.categoria?.toLowerCase() || "";
     const search = searchTerm.toLowerCase();
-
     return nombre.includes(search) || categoria.includes(search);
   });
 
@@ -69,15 +85,11 @@ export const useProductos = () => {
 
     try {
       const token = localStorage.getItem("access_token");
-      if (!token) {
-        throw new Error("No se encontró el token de autenticación");
-      }
+      if (!token) throw new Error("No se encontró el token de autenticación");
 
       const response = await fetch(`https://api.rizosfelices.co/productos/${productoId}`, {
         method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
 
       if (!response.ok) {
@@ -85,18 +97,12 @@ export const useProductos = () => {
         throw new Error(errorData.detail || "Error al eliminar el producto");
       }
 
-      const updatedProductos = productos.filter((producto) => producto.id !== productoId);
-      setProductos(updatedProductos);
+      setProductos((prev) => prev.filter((producto) => producto.id !== productoId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al eliminar el producto");
     } finally {
       setLoading(false);
     }
-  };
-
-  // Función para refrescar los productos
-  const refreshProductos = async () => {
-    await fetchProductos();
   };
 
   return {
@@ -107,6 +113,6 @@ export const useProductos = () => {
     searchTerm,
     setSearchTerm,
     handleDeleteProduct,
-    refreshProductos // Añadida la función refresh
+    refreshProductos: fetchProductos,
   };
 };

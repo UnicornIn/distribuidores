@@ -1,19 +1,6 @@
 import { useToast } from "../hooks/use-toast"
+import { Usuario, UserCreateData, UserUpdateData } from "../type/usuarios"
 
-type Usuario = {
-  id: string
-  nombre: string
-  correo_electronico: string
-  rol: "distribuidor" | "produccion" | "facturacion"
-  estado: "Activo" | "Inactivo"
-  fecha_ultimo_acceso: string
-  admin_id: string
-  pais: string
-  phone: string
-}
-
-type UserCreateData = Omit<Usuario, "id" | "fecha_ultimo_acceso" | "admin_id"> & { password: string }
-type UserUpdateData = Partial<Omit<Usuario, "id" | "rol" | "admin_id">>
 type PasswordChangeData = { currentPassword: string; newPassword: string }
 
 export const useUserAPI = () => {
@@ -35,9 +22,9 @@ export const useUserAPI = () => {
     throw error
   }
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (): Promise<Usuario[]> => {
     try {
-      const response = await fetch("https://api.rizosfelices.co/usuarios/", {
+      const response = await fetch("https://api.rizosfelices.co/api/usuarios/", {
         headers: getAuthHeader()
       })
 
@@ -51,16 +38,28 @@ export const useUserAPI = () => {
     }
   }
 
-  const createUser = async (userData: UserCreateData) => {
+  const createUser = async (userData: UserCreateData): Promise<Usuario> => {
     try {
-      const response = await fetch("https://api.rizosfelices.co/usuarios/", {
+      // Preparar datos para enviar
+      const payload = {
+        ...userData,
+        correo_electronico: userData.correo_electronico.toLowerCase(),
+        rol: userData.rol,
+        // Asegurar que solo se envíen campos relevantes según el rol
+        ...(userData.rol.includes("distribuidor") ? {
+          tipo_precio: userData.tipo_precio,
+          unidades_individuales: userData.unidades_individuales,
+          cdi: userData.cdi
+        } : {}),
+        ...(userData.rol === "bodega" ? {
+          cdi: userData.cdi
+        } : {})
+      }
+
+      const response = await fetch("https://api.rizosfelices.co/api/create-users/", {
         method: "POST",
         headers: getAuthHeader(),
-        body: JSON.stringify({
-          ...userData,
-          correo_electronico: userData.correo_electronico.toLowerCase(),
-          rol: userData.rol.toLowerCase()
-        })
+        body: JSON.stringify(payload)
       })
 
       if (!response.ok) {
@@ -75,7 +74,7 @@ export const useUserAPI = () => {
     }
   }
 
-  const updateUser = async (userId: string, data: UserUpdateData) => {
+  const updateUser = async (userId: string, data: UserUpdateData): Promise<Usuario> => {
     try {
       const response = await fetch(`https://api.rizosfelices.co/usuarios/${userId}`, {
         method: "PUT",
@@ -95,7 +94,7 @@ export const useUserAPI = () => {
     }
   }
 
-  const changePassword = async (userId: string, data: PasswordChangeData) => {
+  const changePassword = async (userId: string, data: PasswordChangeData): Promise<boolean> => {
     try {
       const response = await fetch(`https://api.rizosfelices.co/usuarios/${userId}/password`, {
         method: "PUT",
@@ -136,17 +135,17 @@ export const useUserAPI = () => {
       });
 
       return result as Usuario;
-
     } catch (error) {
       toast({
         title: "❌ Error",
         description: error instanceof Error ? error.message : "Error desconocido al cambiar estado",
         variant: "destructive"
       });
-      throw error; // Propaga el error para manejo adicional si es necesario
+      throw error;
     }
   };
-  const deleteUser = async (userId: string) => {
+
+  const deleteUser = async (userId: string): Promise<boolean> => {
     try {
       const response = await fetch(`https://api.rizosfelices.co/usuarios/${userId}`, {
         method: "DELETE",

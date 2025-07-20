@@ -285,7 +285,7 @@ export function ProductoEditForm({ producto, onSuccess }: { producto: Producto; 
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Stock:</span>
-                <span>{watch('stock')}</span>
+                <span>{String(watch('stock'))}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Código de tipo:</span>
