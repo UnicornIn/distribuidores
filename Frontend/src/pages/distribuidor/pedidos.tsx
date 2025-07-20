@@ -3,8 +3,21 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
 import { PlusCircle } from "lucide-react";
 
@@ -25,9 +38,8 @@ export default function PedidosPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5; // Mostrar 5 pedidos por página
+  const itemsPerPage = 5;
 
-  // Obtener los pedidos al cargar la página
   useEffect(() => {
     const fetchPedidos = async () => {
       try {
@@ -36,18 +48,30 @@ export default function PedidosPage() {
           throw new Error("No se encontró el token de autenticación");
         }
 
-        const response = await fetch("https://api.rizosfelices.co/pedidos/", {
-          headers: {
-            Authorization: `Bearer ${token}`,
+        const response = await fetch(
+          "https://api.rizosfelices.co/orders/get-all-orders/",
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
           },
-        });
+        );
 
         if (!response.ok) {
           throw new Error("Error al obtener los pedidos");
         }
 
         const data = await response.json();
-        setPedidos(data.pedidos);
+
+        // Mapeamos los pedidos asegurando que usamos el id correcto
+        const pedidosFormateados = data.pedidos.map((pedido: any) => ({
+          id: pedido.id, // Usamos específicamente el campo id
+          fecha: pedido.fecha || new Date().toISOString(),
+          productos: pedido.productos || [],
+          estado: pedido.estado || "pendiente",
+        }));
+
+        setPedidos(pedidosFormateados);
       } catch (err) {
         console.error("Error al obtener los pedidos:", err);
       } finally {
@@ -60,7 +84,12 @@ export default function PedidosPage() {
 
   // Función para calcular el total de un pedido (ahora devuelve un número entero)
   const calcularTotal = (productos: Producto[]) => {
-    return Math.round(productos.reduce((total, producto) => total + producto.precio * producto.cantidad, 0));
+    return Math.round(
+      productos.reduce(
+        (total, producto) => total + producto.precio * producto.cantidad,
+        0,
+      ),
+    );
   };
 
   const getEstadoBadge = (estado: string) => {
@@ -116,8 +145,12 @@ export default function PedidosPage() {
     <div className="container mx-auto p-4 md:p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-primary md:text-3xl">Mis Pedidos</h1>
-          <p className="text-muted-foreground">Gestiona tus pedidos realizados</p>
+          <h1 className="text-2xl font-bold text-primary md:text-3xl">
+            Mis Pedidos
+          </h1>
+          <p className="text-muted-foreground">
+            Gestiona tus pedidos realizados
+          </p>
         </div>
         <Link to="/distribuidor/pedidos/nuevo">
           <Button className="gap-2">
@@ -134,7 +167,9 @@ export default function PedidosPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Historial de Pedidos</CardTitle>
-                <CardDescription>Visualiza todos tus pedidos anteriores y su estado actual</CardDescription>
+                <CardDescription>
+                  Visualiza todos tus pedidos anteriores y su estado actual
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <Table>
@@ -153,10 +188,19 @@ export default function PedidosPage() {
                       const total = calcularTotal(pedido.productos);
                       return (
                         <TableRow key={pedido.id}>
-                          <TableCell className="font-medium">{pedido.id}</TableCell>
-                          <TableCell>{new Date(pedido.fecha).toLocaleDateString()}</TableCell>
+                          <TableCell className="font-medium">
+                            {pedido.id}
+                          </TableCell>
                           <TableCell>
-                            {pedido.productos.map((producto) => `${producto.nombre} (x${producto.cantidad})`).join(", ")}
+                            {new Date(pedido.fecha).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            {pedido.productos
+                              .map(
+                                (producto) =>
+                                  `${producto.nombre} (x${producto.cantidad})`,
+                              )
+                              .join(", ")}
                           </TableCell>
                           <TableCell>${total}</TableCell>
                           <TableCell>{getEstadoBadge(pedido.estado)}</TableCell>
@@ -184,19 +228,27 @@ export default function PedidosPage() {
                 <Card key={pedido.id} className="mb-4">
                   <CardHeader>
                     <CardTitle className="text-lg">{pedido.id}</CardTitle>
-                    <CardDescription>{new Date(pedido.fecha).toLocaleDateString()}</CardDescription>
+                    <CardDescription>
+                      {new Date(pedido.fecha).toLocaleDateString()}
+                    </CardDescription>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
                       <div>
                         <span className="font-medium">Productos:</span>{" "}
-                        {pedido.productos.map((producto) => `${producto.nombre} (x${producto.cantidad})`).join(", ")}
+                        {pedido.productos
+                          .map(
+                            (producto) =>
+                              `${producto.nombre} (x${producto.cantidad})`,
+                          )
+                          .join(", ")}
                       </div>
                       <div>
                         <span className="font-medium">Total:</span> ${total}
                       </div>
                       <div>
-                        <span className="font-medium">Estado:</span> {getEstadoBadge(pedido.estado)}
+                        <span className="font-medium">Estado:</span>{" "}
+                        {getEstadoBadge(pedido.estado)}
                       </div>
                       <div className="flex justify-end">
                         <Link to={`/distribuidor/pedidos/${pedido.id}`}>
@@ -234,7 +286,9 @@ export default function PedidosPage() {
         <Card>
           <CardHeader>
             <CardTitle>No hay pedidos</CardTitle>
-            <CardDescription>Aún no has realizado ningún pedido. ¡Crea tu primer pedido ahora!</CardDescription>
+            <CardDescription>
+              Aún no has realizado ningún pedido. ¡Crea tu primer pedido ahora!
+            </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center">
             <Link to="/distribuidor/pedidos/nuevo">

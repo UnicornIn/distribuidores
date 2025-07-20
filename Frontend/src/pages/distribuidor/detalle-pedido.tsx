@@ -12,10 +12,8 @@ type ProductoDetalle = {
   id: string;
   nombre: string;
   precio: number;
-  precio_sin_iva: number;
   iva_unitario: number;
   cantidad: number;
-  total: number;
   tipo_precio: string;
 };
 
@@ -41,7 +39,6 @@ export default function DetallePedidoPage() {
   const [pedido, setPedido] = useState<PedidoDetalle | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Obtener los detalles del pedido
   useEffect(() => {
     const fetchPedido = async () => {
       try {
@@ -50,7 +47,7 @@ export default function DetallePedidoPage() {
           throw new Error("No se encontró el token de autenticación");
         }
 
-        const response = await fetch(`https://api.rizosfelices.co/pedidos/${id}`, {
+        const response = await fetch(`https://api.rizosfelices.co/orders/detalles-pedidos/${id}`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -72,7 +69,6 @@ export default function DetallePedidoPage() {
     fetchPedido();
   }, [id]);
 
-  // Función para formatear números con separadores de miles
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat('es-CO').format(Math.round(num));
   };
@@ -89,23 +85,11 @@ export default function DetallePedidoPage() {
   const getEstadoBadge = (estado: string) => {
     switch (estado) {
       case "Procesando":
-        return (
-          <Badge variant="outline" className="bg-blue-100 text-blue-800">
-            Procesando
-          </Badge>
-        );
+        return <Badge variant="outline" className="bg-blue-100 text-blue-800">Procesando</Badge>;
       case "en camino":
-        return (
-          <Badge variant="outline" className="bg-orange-100 text-orange-800">
-            En Camino
-          </Badge>
-        );
+        return <Badge variant="outline" className="bg-orange-100 text-orange-800">En Camino</Badge>;
       case "facturado":
-        return (
-          <Badge variant="outline" className="bg-green-100 text-green-800">
-            Facturado
-          </Badge>
-        );
+        return <Badge variant="outline" className="bg-green-100 text-green-800">Facturado</Badge>;
       default:
         return <Badge variant="outline">Desconocido</Badge>;
     }
@@ -124,7 +108,6 @@ export default function DetallePedidoPage() {
     }
   };
 
-  // Función para manejar la impresión
   const handlePrint = () => {
     window.print();
   };
@@ -218,19 +201,19 @@ export default function DetallePedidoPage() {
 
             <CardFooter className="border-t pt-6">
               <div className="w-full space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal productos:</span>
-                  <span>${formatNumber(pedido.subtotal)}</span>
-                </div>
-
-                <div className="flex justify-between border-b pb-2">
-                  <div>
-                    <span className="text-muted-foreground">IVA (19%)</span>
-                    <p className="text-xs text-muted-foreground">Desglose por producto</p>
-                  </div>
-                  <span>${formatNumber(pedido.iva)}</span>
-                </div>
-
+                {pedido.tipo_precio === 'con_iva' && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Subtotal productos:</span>
+                      <span>${formatNumber(pedido.subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between border-b pb-2">
+                      <span className="text-muted-foreground">IVA (19%)</span>
+                      <span>${formatNumber(pedido.iva)}</span>
+                    </div>
+                  </>
+                )}
+                
                 <div className="flex justify-between pt-2">
                   <span className="font-semibold">Total a pagar:</span>
                   <span className="font-semibold text-lg">${formatNumber(pedido.total)}</span>
@@ -244,6 +227,7 @@ export default function DetallePedidoPage() {
           </Card>
         </div>
 
+        {/* Resto del código permanece igual */}
         <div className="space-y-6">
           <Card>
             <CardHeader>

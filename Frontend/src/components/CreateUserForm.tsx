@@ -1,9 +1,9 @@
 import { Label } from "../components/ui/label";
 import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "../components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import { Info } from "lucide-react";
+import { UsuarioRol, TipoPrecio, CDIType } from "../type/usuarios";
 
 type CreateUserFormProps = {
   user: any;
@@ -11,18 +11,44 @@ type CreateUserFormProps = {
 };
 
 export const CreateUserForm = ({ user, onChange }: CreateUserFormProps) => {
-  const handleRoleChange = (value: string) => {
-    const updatedUser = { ...user, rol: value };
-    if (value === "distribuidor" && !updatedUser.tipo_precio) {
-      updatedUser.tipo_precio = "con_iva";
-    } else if (value !== "distribuidor" && "tipo_precio" in updatedUser) {
-      delete updatedUser.tipo_precio;
+  const handleRoleChange = (value: UsuarioRol) => {
+    const updatedUser = { 
+      ...user, 
+      rol: value,
+      // Limpiar campos específicos si no es distribuidor
+      ...(value !== "distribuidor_nacional" && value !== "distribuidor_internacional" && {
+        tipo_precio: undefined,
+        unidades_individuales: undefined,
+        cdi: undefined
+      }),
+      // Limpiar cdi si no es bodega
+      ...(value !== "bodega" && { cdi: undefined })
+    };
+    
+    // Establecer valores por defecto para distribuidores
+    if (value === "distribuidor_nacional" || value === "distribuidor_internacional") {
+      updatedUser.tipo_precio = updatedUser.tipo_precio || "con_iva";
+      updatedUser.unidades_individuales = updatedUser.unidades_individuales !== undefined ? updatedUser.unidades_individuales : false;
     }
+    
+    // Establecer cdi por defecto para bodega
+    if (value === "bodega") {
+      updatedUser.cdi = updatedUser.cdi || "medellin";
+    }
+    
     onChange(updatedUser);
   };
 
-  const handleTipoPrecioChange = (value: string) => {
+  const handleTipoPrecioChange = (value: TipoPrecio) => {
     onChange({ ...user, tipo_precio: value });
+  };
+
+  const handleCDIChange = (value: CDIType) => {
+    onChange({ ...user, cdi: value });
+  };
+
+  const handleUnidadesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    onChange({ ...user, unidades_individuales: e.target.checked });
   };
 
   return (
@@ -32,14 +58,12 @@ export const CreateUserForm = ({ user, onChange }: CreateUserFormProps) => {
         <Card className="shadow-sm">
           <CardHeader className="p-4 pb-2">
             <CardTitle className="text-base">Información Básica</CardTitle>
-            <CardDescription className="text-xs">Datos principales del usuario</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 p-4 pt-0 md:grid-cols-2">
             <div className="grid gap-1">
-              <Label htmlFor="nombre" className="text-sm">Nombre</Label>
+              <Label htmlFor="nombre">Nombre</Label>
               <Input
                 id="nombre"
-                className="h-9 text-sm"
                 value={user.nombre}
                 onChange={(e) => onChange({ ...user, nombre: e.target.value })}
                 placeholder="Ej: Juan Pérez"
@@ -48,11 +72,10 @@ export const CreateUserForm = ({ user, onChange }: CreateUserFormProps) => {
             </div>
 
             <div className="grid gap-1">
-              <Label htmlFor="correo_electronico" className="text-sm">Correo</Label>
+              <Label htmlFor="correo_electronico">Correo</Label>
               <Input
                 id="correo_electronico"
                 type="email"
-                className="h-9 text-sm"
                 value={user.correo_electronico}
                 onChange={(e) => onChange({ ...user, correo_electronico: e.target.value })}
                 placeholder="usuario@empresa.com"
@@ -61,11 +84,10 @@ export const CreateUserForm = ({ user, onChange }: CreateUserFormProps) => {
             </div>
 
             <div className="grid gap-1">
-              <Label htmlFor="password" className="text-sm">Contraseña</Label>
+              <Label htmlFor="password">Contraseña</Label>
               <Input
                 id="password"
                 type="password"
-                className="h-9 text-sm"
                 value={user.password || ''}
                 onChange={(e) => onChange({ ...user, password: e.target.value })}
                 placeholder="••••••••"
@@ -82,36 +104,34 @@ export const CreateUserForm = ({ user, onChange }: CreateUserFormProps) => {
           </CardHeader>
           <CardContent className="grid gap-3 p-4 pt-0 md:grid-cols-2">
             <div className="grid gap-1">
-              <Label htmlFor="pais" className="text-sm">País</Label>
+              <Label htmlFor="pais">País</Label>
               <Select
                 value={user.pais}
                 onValueChange={(value) => onChange({ ...user, pais: value })}
                 required
               >
-                <SelectTrigger className="h-9 text-sm">
+                <SelectTrigger>
                   <SelectValue placeholder="Selecciona país" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Colombia" className="text-sm">Colombia</SelectItem>
-                  <SelectItem value="México" className="text-sm">México</SelectItem>
-                  <SelectItem value="Chile" className="text-sm">Chile</SelectItem>
-                  <SelectItem value="Perú" className="text-sm">Perú</SelectItem>
-                  <SelectItem value="Ecuador" className="text-sm">Ecuador</SelectItem>
+                  <SelectItem value="Colombia">Colombia</SelectItem>
+                  <SelectItem value="México">México</SelectItem>
+                  <SelectItem value="Chile">Chile</SelectItem>
+                  <SelectItem value="Perú">Perú</SelectItem>
+                  <SelectItem value="Ecuador">Ecuador</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="grid gap-1">
-              <Label htmlFor="telefono" className="text-sm">Teléfono</Label>
+              <Label htmlFor="telefono">Teléfono</Label>
               <Input
                 id="telefono"
                 type="tel"
-                className="h-9 text-sm"
                 value={user.phone}
                 onChange={(e) => onChange({ ...user, phone: e.target.value })}
                 placeholder="+57 300 123 4567"
                 required
-                pattern="[+0-9\s\-]*"
               />
             </div>
           </CardContent>
@@ -124,114 +144,134 @@ export const CreateUserForm = ({ user, onChange }: CreateUserFormProps) => {
           </CardHeader>
           <CardContent className="grid gap-3 p-4 pt-0">
             <div className="grid gap-1">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="rol" className="text-sm">Rol</Label>
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <Info className="h-3 w-3" />
-                  Permisos del usuario
-                </span>
-              </div>
+              <Label htmlFor="rol">Rol</Label>
               <Select
                 value={user.rol}
                 onValueChange={handleRoleChange}
                 required
               >
-                <SelectTrigger className="h-9 text-sm">
+                <SelectTrigger>
                   <SelectValue placeholder="Selecciona rol" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="distribuidor" className="text-sm">
+                  <SelectItem value="distribuidor_nacional">
                     <div className="flex items-center gap-2">
-                      <Badge className="bg-blue-100 text-blue-800 px-1.5 py-0.5 text-xs">D</Badge>
-                      <span>Distribuidor</span>
+                      <Badge className="bg-blue-100 text-blue-800">DN</Badge>
+                      <span>Distribuidor Nacional</span>
                     </div>
                   </SelectItem>
-                  <SelectItem value="produccion" className="text-sm">
+                  <SelectItem value="distribuidor_internacional">
                     <div className="flex items-center gap-2">
-                      <Badge className="bg-green-100 text-green-800 px-1.5 py-0.5 text-xs">P</Badge>
+                      <Badge className="bg-blue-100 text-blue-800">DI</Badge>
+                      <span>Distribuidor Internacional</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="produccion">
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-green-100 text-green-800">P</Badge>
                       <span>Producción</span>
                     </div>
                   </SelectItem>
-                  <SelectItem value="facturacion" className="text-sm">
+                  <SelectItem value="facturacion">
                     <div className="flex items-center gap-2">
-                      <Badge className="bg-purple-100 text-purple-800 px-1.5 py-0.5 text-xs">F</Badge>
+                      <Badge className="bg-purple-100 text-purple-800">F</Badge>
                       <span>Facturación</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="bodega">
+                    <div className="flex items-center gap-2">
+                      <Badge className="bg-orange-100 text-orange-800">B</Badge>
+                      <span>Bodega</span>
                     </div>
                   </SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {user.rol === "distribuidor" && (
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="tipo_precio" className="text-sm">Precios</Label>
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Info className="h-3 w-3" />
-                    Visualización de precios
-                  </span>
+            {/* Campos específicos para distribuidores */}
+            {(user.rol === "distribuidor_nacional" || user.rol === "distribuidor_internacional") && (
+              <>
+                <div className="grid gap-1">
+                  <Label htmlFor="tipo_precio">Tipo de Precio</Label>
+                  <Select
+                    value={user.tipo_precio || "con_iva"}
+                    onValueChange={handleTipoPrecioChange}
+                    required
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona tipo de precio" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sin_iva">Sin IVA (Nacional)</SelectItem>
+                      <SelectItem value="con_iva">Con IVA (+19%)</SelectItem>
+                      {user.rol === "distribuidor_internacional" && (
+                        <SelectItem value="sin_iva_internacional">Sin IVA (Internacional)</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
+
+                <div className="grid gap-1">
+                  <Label htmlFor="cdi">CDI</Label>
+                  <Select
+                    value={user.cdi || "medellin"}
+                    onValueChange={handleCDIChange}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona CDI" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="medellin">Medellín</SelectItem>
+                      <SelectItem value="guarne">Guarne</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="unidades_individuales"
+                    checked={user.unidades_individuales || false}
+                    onChange={handleUnidadesChange}
+                  />
+                  <Label htmlFor="unidades_individuales">Unidades Individuales</Label>
+                </div>
+              </>
+            )}
+
+            {/* Campo específico para bodega */}
+            {user.rol === "bodega" && (
+              <div className="grid gap-1">
+                <Label htmlFor="cdi">Ubicación de Bodega</Label>
                 <Select
-                  value={user.tipo_precio || "con_iva"}
-                  onValueChange={handleTipoPrecioChange}
+                  value={user.cdi || "medellin"}
+                  onValueChange={handleCDIChange}
                   required
                 >
-                  <SelectTrigger className="h-9 text-sm bg-blue-50">
-                    <SelectValue placeholder="Tipo de precio" />
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona ubicación" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="sin_iva" className="text-sm">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-yellow-100 text-yellow-800 px-1.5 py-0.5 text-xs">$</Badge>
-                        <div>
-                          <p className="text-sm">Sin IVA (Nacional)</p>
-                        </div>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="con_iva" className="text-sm">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-green-100 text-green-800 px-1.5 py-0.5 text-xs">$+</Badge>
-                        <div>
-                          <p className="text-sm">Con IVA (+19%)</p>
-                        </div>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="sin_iva_internacional" className="text-sm">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-red-100 text-red-800 px-1.5 py-0.5 text-xs">$$</Badge>
-                        <div>
-                          <p className="text-sm">Sin IVA (Internacional)</p>
-                        </div>
-                      </div>
-                    </SelectItem>
+                    <SelectItem value="medellin">Medellín</SelectItem>
+                    <SelectItem value="guarne">Guarne</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             )}
 
             <div className="grid gap-1">
-              <Label htmlFor="estado" className="text-sm">Estado</Label>
+              <Label htmlFor="estado">Estado</Label>
               <Select
                 value={user.estado}
                 onValueChange={(value) => onChange({ ...user, estado: value })}
                 required
               >
-                <SelectTrigger className="h-9 text-sm">
+                <SelectTrigger>
                   <SelectValue placeholder="Estado de cuenta" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Activo" className="text-sm text-green-600">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                      <span>Activo</span>
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="Inactivo" className="text-sm text-red-600">
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 w-2 rounded-full bg-red-500"></div>
-                      <span>Inactivo</span>
-                    </div>
-                  </SelectItem>
+                  <SelectItem value="Activo">Activo</SelectItem>
+                  <SelectItem value="Inactivo">Inactivo</SelectItem>
                 </SelectContent>
               </Select>
             </div>

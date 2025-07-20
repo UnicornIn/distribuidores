@@ -53,7 +53,7 @@ export default function AdminDashboardPage() {
       const token = localStorage.getItem("access_token");
       if (!token) throw new Error("No autenticado");
 
-      const response = await fetch("https://api.rizosfelices.co/api/estadisticas/generales", {
+      const response = await fetch("https://api.rizosfelices.co/orders/estadisticas/generales", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -79,7 +79,7 @@ export default function AdminDashboardPage() {
       const token = localStorage.getItem("access_token");
       if (!token) throw new Error("No autenticado");
 
-      const response = await fetch("https://api.rizosfelices.co/api/pedidos/recientes", {
+      const response = await fetch("https://api.rizosfelices.co/orders/api/pedidos/recientes", {
         headers: {
           Authorization: `Bearer ${token}`,
         },

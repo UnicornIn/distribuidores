@@ -22,7 +22,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const response = await fetch("https://api.rizosfelices.co/validate_token", {
+        const response = await fetch("https://api.rizosfelices.co/auth/validate_token", {
           method: "GET",
           headers: {
             "Authorization": `Bearer ${token}`,

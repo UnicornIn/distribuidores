@@ -10,9 +10,9 @@ import { useToast } from "../../hooks/use-toast";
 
 // Función para formatear números con separadores de miles
 const formatNumber = (num: number) => {
-  return new Intl.NumberFormat('es-CO', {
+  return new Intl.NumberFormat("es-CO", {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 0
+    maximumFractionDigits: 0,
   }).format(num);
 };
 
@@ -24,7 +24,7 @@ type Producto = {
   precio_original?: number;
   stock: number;
   cantidad: number;
-  unidad_medida: string;
+  unidad_medida?: string;
   descuento?: number;
   categoria?: string;
   tipo_precio: "sin_iva" | "con_iva" | "sin_iva_internacional" | "base";
@@ -35,9 +35,9 @@ type ProductoPedido = {
   nombre: string;
   cantidad: number;
   precio: number;
-  precio_sin_iva: number; // Añadimos esta propiedad
+  precio_sin_iva: number;
   tipo_precio: "sin_iva" | "con_iva" | "sin_iva_internacional" | "base";
-  iva_unitario?: number; // Opcional para mostrar en la UI
+  iva_unitario?: number;
 };
 
 type PedidoResponse = {
@@ -68,35 +68,37 @@ export default function NuevoPedidoPage() {
   const [pedidoConfirmado, setPedidoConfirmado] = useState<PedidoResponse | null>(null);
   const [tipoPrecioUsuario, setTipoPrecioUsuario] = useState<"sin_iva" | "con_iva" | "sin_iva_internacional" | "base" | null>(null);
 
+  // Variable de control para unidades individuales
+  const unidadesIndividuales = localStorage.getItem("unidades_individuales") === "true";
+
   // Obtener productos disponibles
   useEffect(() => {
     const fetchProductos = async () => {
       try {
         const token = localStorage.getItem("access_token");
-        if (!token) {
-          throw new Error("No autenticado");
-        }
+        if (!token) throw new Error("No autenticado");
 
-        const response = await fetch("https://api.rizosfelices.co/productos/disponibles", {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+        const response = await fetch("https://api.rizosfelices.co/api/productos/disponibles", {
+          headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!response.ok) {
-          throw new Error("Error al obtener productos");
-        }
+        if (!response.ok) throw new Error("Error al obtener productos");
 
         const data = await response.json();
+
+        console.log("Productos cargados:", data); // DEBUG para ver en consola
 
         const tipoPrecio = data[0]?.tipo_precio || "base";
         setTipoPrecioUsuario(tipoPrecio);
 
-        setProductos(data.map((p: Producto) => ({
-          ...p,
-          cantidad: 0,
-          precio: Math.round(p.precio),
-        })));
+        // Normalizamos para asegurarnos que todos tengan cantidad = 0 al inicio
+        setProductos(
+          data.map((p: Producto) => ({
+            ...p,
+            cantidad: 0,
+            precio: Math.round(p.precio),
+          }))
+        );
       } catch (error) {
         toast({
           title: "Error",
@@ -111,77 +113,94 @@ export default function NuevoPedidoPage() {
 
   // Funciones para manejar cantidades
   const actualizarCantidad = (id: string, nuevaCantidad: number) => {
-    setProductos(prev => prev.map(p =>
-      p.id === id
-        ? { ...p, cantidad: Math.max(0, Math.min(nuevaCantidad, p.stock)) }
-        : p
-    ));
+    setProductos((prev) =>
+      prev.map((p) =>
+        p.id === id ? { ...p, cantidad: Math.max(0, Math.min(nuevaCantidad, p.stock)) } : p
+      )
+    );
   };
 
   const incrementarCantidad = (id: string) => {
-    const producto = productos.find(p => p.id === id);
-    if (producto) {
-      actualizarCantidad(id, producto.cantidad + 1);
-    }
+    const producto = productos.find((p) => p.id === id);
+    if (producto) actualizarCantidad(id, producto.cantidad + 1);
   };
 
   const decrementarCantidad = (id: string) => {
-    const producto = productos.find(p => p.id === id);
-    if (producto) {
-      actualizarCantidad(id, producto.cantidad - 1);
-    }
+    const producto = productos.find((p) => p.id === id);
+    if (producto) actualizarCantidad(id, producto.cantidad - 1);
   };
 
-  // Calcular totales del carrito
-  const productosSeleccionados = productos.filter(p => p.cantidad > 0);
+  // Productos seleccionados
+  const productosSeleccionados = productos.filter((p) => p.cantidad > 0);
 
-  // 👇 Aquí ya estás incluyendo el precio con IVA si aplica
   const aplicarIva = tipoPrecioUsuario === "con_iva";
-  const subtotal = productosSeleccionados.reduce((sum, p) => sum + (p.precio * p.cantidad), 0);
+  const subtotal = productosSeleccionados.reduce((sum, p) => sum + p.precio * p.cantidad, 0);
   const iva = aplicarIva ? subtotal * 0.19 : 0;
   const total = aplicarIva ? subtotal + iva : subtotal;
-  
+
   const descuentos = productosSeleccionados.reduce(
     (sum, p) => sum + ((p.precio_original || p.precio) - p.precio) * p.cantidad,
     0
   );
-  
-  // 👇 Enviar pedido con precio incluido
+
+  // Validación de cantidades según categoría
+  const validarCantidades = () => {
+    if (!unidadesIndividuales) return true;
+
+    const productosMen = productosSeleccionados.filter((p) => p.categoria?.toLowerCase() === "men");
+    const productosSpecial = productosSeleccionados.filter(
+      (p) => p.categoria?.toLowerCase() === "special"
+    );
+
+    // Validar múltiplos de 6 para men y de 12 para special
+    const validoMen = productosMen.every((p) => p.cantidad % 6 === 0);
+    const validoSpecial = productosSpecial.every((p) => p.cantidad % 12 === 0);
+
+    return validoMen && validoSpecial;
+  };
+
+  // Enviar pedido con validación
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-  
+
     try {
       const token = localStorage.getItem("access_token");
       if (!token) throw new Error("No autenticado");
-  
+
       if (productosSeleccionados.length === 0) {
         throw new Error("Selecciona al menos un producto");
       }
-  
-      const response = await fetch("https://api.rizosfelices.co/pedidos/", {
+
+      if (!validarCantidades()) {
+        throw new Error(
+          "Los productos de categoría 'men' deben pedirse en múltiplos de 6 y los de 'special' en múltiplos de 12."
+        );
+      }
+
+      const response = await fetch("https://api.rizosfelices.co/orders/create-orders/", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          productos: productosSeleccionados.map(p => ({
+          productos: productosSeleccionados.map((p) => ({
             id: p.id,
             cantidad: p.cantidad,
             tipo_precio: p.tipo_precio,
-            precio: p.precio, // ✅ Incluido el IVA si aplica
+            precio: p.precio,
           })),
           direccion,
           notas,
         }),
       });
-  
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.detail || "Error al crear pedido");
       }
-  
+
       const data: PedidoResponse = await response.json();
       setPedidoConfirmado(data);
       toast({
@@ -198,19 +217,20 @@ export default function NuevoPedidoPage() {
       setLoading(false);
     }
   };
+
   
   // ✅ Vista de confirmación (usa el desglose, pero sin recalcular mal el IVA)
+    // ✅ Vista de confirmación (usa el desglose, pero sin recalcular mal el IVA)
   if (pedidoConfirmado) {
     const { pedido } = pedidoConfirmado;
     const productosPedido = pedido.productos || [];
     const fechaPedido = pedido.fecha ? new Date(pedido.fecha) : new Date();
-  
-    // ✅ Usamos precio_sin_iva si lo devuelve el backend ya calculado
+
     const subtotalSinIva = productosPedido.reduce(
       (sum, p) => sum + (p.precio_sin_iva * p.cantidad),
       0
     );
-  
+
     const aplicarIvaPedido = tipoPrecioUsuario === "con_iva";
     const ivaPedido = aplicarIvaPedido ? subtotalSinIva * 0.19 : 0;
     const totalPedido = aplicarIvaPedido ? subtotalSinIva + ivaPedido : subtotalSinIva;
@@ -373,7 +393,6 @@ export default function NuevoPedidoPage() {
       <h1 className="text-2xl font-bold">Nuevo Pedido</h1>
       {tipoPrecioUsuario && (
         <div className="text-sm text-muted-foreground">
-
           {tipoPrecioUsuario === "con_iva" && (
             <span className="ml-2 text-green-600"></span>
           )}
@@ -405,7 +424,7 @@ export default function NuevoPedidoPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    productos.map(p => (
+                    productos.map((p) => (
                       <TableRow key={p.id}>
                         <TableCell>
                           <span className="font-mono bg-gray-100 px-2 py-1 rounded text-sm">
@@ -421,10 +440,6 @@ export default function NuevoPedidoPage() {
                         <TableCell className="text-right">
                           <div className="font-semibold">
                             ${formatNumber(p.precio)}
-                            {tipoPrecioUsuario === "con_iva" && (
-                              <span className="block text-xs text-green-600">
-                              </span>
-                            )}
                           </div>
                           {p.precio_original && p.precio < p.precio_original && (
                             <div className="text-xs text-green-600 line-through">
@@ -485,7 +500,7 @@ export default function NuevoPedidoPage() {
             <CardContent>
               {productosSeleccionados.length > 0 ? (
                 <div className="space-y-4">
-                  {productosSeleccionados.map(p => (
+                  {productosSeleccionados.map((p) => (
                     <div key={p.id} className="flex justify-between">
                       <div>
                         <span className="font-medium">{p.cantidad}x {p.nombre}</span>
@@ -538,14 +553,25 @@ export default function NuevoPedidoPage() {
                 </div>
               )}
             </CardContent>
-            <CardFooter>
+            <CardFooter className="flex flex-col gap-3">
+              {!validarCantidades() && (
+                <div className="w-full bg-yellow-50 border border-yellow-300 rounded-lg p-3 flex items-center gap-3 text-yellow-800">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.054 0 1.502-1.282.732-2.012L13.732 4.988a1 1 0 00-1.464 0L5.34 16.988c-.77.73-.322 2.012.732 2.012z" />
+                  </svg>
+                  <p className="text-sm font-medium">
+                    Para continuar, asegúrate de que los productos de <b>MEN</b> sean múltiplos de 6 y los de <b>SPECIAL</b> de 12.
+                  </p>
+                </div>
+              )}
+
               <form onSubmit={handleSubmit} className="w-full space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="direccion">Dirección de Entrega *</Label>
                   <input
                     id="direccion"
                     value={direccion}
-                    onChange={e => setDireccion(e.target.value)}
+                    onChange={(e) => setDireccion(e.target.value)}
                     required
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     placeholder="Calle, número, ciudad, código postal"
@@ -556,7 +582,7 @@ export default function NuevoPedidoPage() {
                   <input
                     id="notas"
                     value={notas}
-                    onChange={e => setNotas(e.target.value)}
+                    onChange={(e) => setNotas(e.target.value)}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     placeholder="Instrucciones especiales para la entrega"
                   />
@@ -564,7 +590,11 @@ export default function NuevoPedidoPage() {
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={productosSeleccionados.length === 0 || loading}
+                  disabled={
+                    productosSeleccionados.length === 0 ||
+                    loading ||
+                    !validarCantidades()
+                  }
                 >
                   {loading ? (
                     <>
