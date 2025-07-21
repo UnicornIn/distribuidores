@@ -576,4 +576,46 @@ async def read_user_me(current_user: dict = Depends(get_current_user)):
             detail=str(e)
         )
 
-  
+@router.patch("/distribuidores/{distribuidor_id}/unidades-individuales")
+async def toggle_unidades_individuales(
+    distribuidor_id: str,
+    current_user: Dict = Depends(get_current_user)
+):
+    """
+    Endpoint para alternar el permiso de unidades individuales de un distribuidor
+    Requiere rol Admin o Bodega
+    """
+    try:
+        # Verificar permisos
+        if current_user["rol"] not in ["Admin", "bodega"]:
+            raise HTTPException(status_code=403, detail="Acceso denegado")
+
+        # Buscar el distribuidor por el campo 'id' (no _id)
+        distribuidor = await collection_distribuidores.find_one({"id": distribuidor_id})
+        if not distribuidor:
+            raise HTTPException(status_code=404, detail="Distribuidor no encontrado")
+
+        # Alternar el valor actual
+        nuevo_valor = not distribuidor.get("unidades_individuales", False)
+        
+        # Actualizar en la base de datos usando el campo 'id'
+        result = await collection_distribuidores.update_one(
+            {"id": distribuidor_id},
+            {"$set": {"unidades_individuales": nuevo_valor}}
+        )
+
+        if result.modified_count == 1:
+            return {
+                "message": "Permiso actualizado correctamente",
+                "distribuidor_id": distribuidor_id,
+                "unidades_individuales": nuevo_valor
+            }
+        else:
+            raise HTTPException(status_code=400, detail="No se pudo actualizar el distribuidor")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error al actualizar unidades individuales: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+

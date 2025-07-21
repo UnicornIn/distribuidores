@@ -14,12 +14,15 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",         # Desarrollo local
+        "http://127.0.0.1:3000",         # Alternativa local
+        "https://distribuidores.rizosfelices.co"  # Producción
+    ],
     allow_credentials=True,
-    allow_methods=["*"],  # Permite todos los métodos
+    allow_methods=["*"],  # Permite todos los métodos HTTP
     allow_headers=["*"],  # Permite todos los headers
 )
-
 # Health Check Endpoint
 @app.get("/")
 async def read_root():
