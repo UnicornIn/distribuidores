@@ -314,16 +314,16 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
 
     # Enviar correos
     enviar_correo(
-        "rivejuan987@gmail.com",
+        "produccion@rizosfelices.co",
         f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}",
         mensaje_admin
     )
 
-    # enviar_correo(
-    #     "tesoreria@rizosfelices.co",
-    #     f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}",
-    #     mensaje_admin
-    # )
+    enviar_correo(
+        "tesoreria@rizosfelices.co",
+        f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}",
+        mensaje_admin
+    )
 
     enviar_correo(
         current_user["email"],
