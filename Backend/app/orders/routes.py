@@ -312,13 +312,6 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     </html>
     """
 
-    # Enviar correos
-    enviar_correo(
-        "produccion@rizosfelices.co",
-        f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}",
-        mensaje_admin
-    )
-
     enviar_correo(
         "tesoreria@rizosfelices.co",
         f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}",
@@ -326,7 +319,7 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     )
     correos_cdi = {
         "medellin": "cdimedellin@rizosfelices.co",
-        "guarne": ""  # 💡 Aquí pondrás el correo cuando esté disponible
+        "guarne": "produccion@rizosfelices.co"  
     }
 
     cdi_distribuidor = distribuidor.get("cdi", "").lower()
