@@ -324,14 +324,30 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}",
         mensaje_admin
     )
+    correos_cdi = {
+        "medellin": "cdimedellin@rizosfelices.co",
+        "guarne": ""  # 💡 Aquí pondrás el correo cuando esté disponible
+    }
 
+    cdi_distribuidor = distribuidor.get("cdi", "").lower()
+    correo_cdi = correos_cdi.get(cdi_distribuidor)
+
+    # Solo enviar si el correo no está vacío
+    if correo_cdi:
+        enviar_correo(
+            correo_cdi,
+            f"📦 Nuevo Pedido (CDI {cdi_distribuidor.capitalize()}): {pedido_id} - {distribuidor_nombre}",
+            mensaje_admin
+        )
+        print(f"📧 Correo adicional enviado a {correo_cdi}")
+
+    # Correo al distribuidor
     enviar_correo(
         current_user["email"],
         f"✅ Confirmación de Pedido: {pedido_id}",
         mensaje_distribuidor
     )
-
-    
+        
     print(f"📧 Correos enviados para el pedido {pedido_id}")
 
     # Convertir ObjectId a string para la respuesta JSON
