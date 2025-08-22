@@ -19,6 +19,7 @@ collection_facturas = db["facturadores"]
 collection_produccion = db["produccion"]
 collection_admin = db["admin"]
 collection_bodegas = db["bodega"]
+collection_ordenes = db["purchase_orders"]
 
 def connect_to_mongo():
     pass

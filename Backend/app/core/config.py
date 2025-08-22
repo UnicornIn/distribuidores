@@ -7,6 +7,7 @@ from app.auth.routes import router as auth_router
 from app.users.routes import router as users_router
 from app.orders.routes import router as orders_router
 from app.products.routes import router as products_router
+from app.store.routes import router as store_router
 
 load_dotenv()
 
@@ -33,3 +34,5 @@ app.include_router(auth_router, prefix="/auth", tags=["Auth"])
 app.include_router(users_router, prefix="/api", tags=["Users"])
 app.include_router(orders_router, prefix="/orders", tags=["Orders"])
 app.include_router(products_router, prefix="/api", tags=["Products"])
+app.include_router(store_router, prefix="/store", tags=["Store"])
+
