@@ -12,6 +12,7 @@ from app.core.database import (
     collection_distribuidores,
     collection_admin,
     collection_bodegas,
+    collection_ordenes
 )
 
 router = APIRouter()
@@ -36,16 +37,14 @@ def enviar_correo(destinatario, asunto, mensaje):
         server.send_message(msg)
     print(f"📧 Correo enviado a {destinatario}")
 
-# ENDPOINT PARA CREAR EL PEDIDO Y DEVUELVE DETALLES
-@router.post("/create-orders/")
-async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_user)):
-    print("📢 Iniciando creación de pedido")
+@router.post("/create-purchase-order/")
+async def crear_orden_compra(orden: dict, current_user: dict = Depends(get_current_user)):
+    print("📢 Iniciando creación de ORDEN DE COMPRA")
 
     # Verificar si el usuario tiene el rol de distribuidor
     if current_user.get("rol") not in ["distribuidor", "distribuidor_nacional", "distribuidor_internacional"]:
         print(f"❌ Acceso denegado: Rol no permitido: {current_user.get('rol')}")
-        raise HTTPException(status_code=403, detail="Solo los distribuidores pueden crear pedidos")
-
+        raise HTTPException(status_code=403, detail="Solo los distribuidores pueden crear órdenes de compra")
 
     # Obtener distribuidor actual
     distribuidor = await collection_distribuidores.find_one({"correo_electronico": current_user["email"]})
@@ -60,28 +59,28 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
 
     print(f"📢 Distribuidor encontrado: {distribuidor_nombre}, Tipo de precio: {tipo_precio}")
 
-    # Validaciones básicas del pedido
-    if "productos" not in pedido or not isinstance(pedido["productos"], list):
-        print("❌ Pedido inválido: Falta lista de productos")
-        raise HTTPException(status_code=400, detail="El pedido debe contener una lista de productos")
+    # Validaciones básicas de la orden
+    if "productos" not in orden or not isinstance(orden["productos"], list):
+        print("❌ Orden inválida: Falta lista de productos")
+        raise HTTPException(status_code=400, detail="La orden de compra debe contener una lista de productos")
 
-    if "direccion" not in pedido:
-        print("❌ Pedido inválido: Falta dirección")
-        raise HTTPException(status_code=400, detail="El pedido debe incluir una dirección")
+    if "direccion" not in orden:
+        print("❌ Orden inválida: Falta dirección")
+        raise HTTPException(status_code=400, detail="La orden de compra debe incluir una dirección")
 
     productos_actualizados = []
     subtotal = 0
     iva_total = 0
 
-    # Procesar cada producto del pedido
-    for producto in pedido["productos"]:
+    # Procesar cada producto de la orden
+    for producto in orden["productos"]:
         if "id" not in producto or "cantidad" not in producto or "precio" not in producto:
             print(f"❌ Producto inválido: {producto}")
             raise HTTPException(status_code=400, detail="Cada producto debe tener 'id', 'cantidad' y 'precio'")
 
         producto_id = producto["id"]
         cantidad_solicitada = int(producto["cantidad"])
-        precio_sin_iva = float(producto["precio"])  # 💡 El precio enviado desde el frontend sin IVA
+        precio_sin_iva = float(producto["precio"])  # 💡 Precio enviado desde el frontend sin IVA
 
         print(f"🔍 Verificando producto {producto_id}")
 
@@ -92,6 +91,7 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         # Obtener el stock actual y convertirlo a int
         stock_actual = producto_db.get("stock", 0)
         if isinstance(stock_actual, dict):
+            # Si en tu esquema usas un dict por bodegas y aquí no segmentas por bodega, toma cualquier valor (o ajusta según tu lógica)
             stock_actual = int(list(stock_actual.values())[0])
         else:
             stock_actual = int(stock_actual)
@@ -104,20 +104,15 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
             iva = round(precio_sin_iva * 0.19, 2)
             precio_con_iva = round(precio_sin_iva + iva, 2)
             iva_producto = round(iva * cantidad_solicitada, 2)
-
         elif tipo_precio in ["sin_iva", "sin_iva_internacional"]:
             precio_con_iva = precio_sin_iva
             iva_producto = 0
             iva = 0
-
         else:
             raise HTTPException(status_code=400, detail="Tipo de precio no válido")
 
-        print(f"✅ Producto {producto_id}: Precio sin IVA: {precio_sin_iva}, IVA unitario: {iva}, Total con IVA: {precio_con_iva}")
+        print(f"✅ Producto {producto_id}: Sin IVA: {precio_sin_iva}, IVA unit: {iva}, Con IVA: {precio_con_iva}")
 
-        # Actualizar stock
-        nuevo_stock = stock_actual - cantidad_solicitada
-        await collection_productos.update_one({"id": producto_id}, {"$set": {"stock": nuevo_stock}})
 
         productos_actualizados.append({
             "id": producto_id,
@@ -133,34 +128,33 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         subtotal += precio_sin_iva * cantidad_solicitada
         iva_total += iva_producto
 
-        print(f"✅ Producto {producto_id} actualizado con nuevo stock: {nuevo_stock}")
 
-    total_pedido = subtotal + iva_total
-    print(f"📦 Subtotal: {subtotal}, IVA Total: {iva_total}, Total Pedido: {total_pedido}")
+    total_orden = subtotal + iva_total
+    print(f"📦 Subtotal: {subtotal}, IVA Total: {iva_total}, Total Orden: {total_orden}")
 
-    # Crear pedido en la base de datos
-    pedido_id = f"PED-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    nuevo_pedido = {
-        "id": pedido_id,
+    # Crear ORDEN DE COMPRA en la base de datos
+    orden_compra_id = f"OC-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    nueva_orden = {
+        "id": orden_compra_id,
         "distribuidor_id": distribuidor_id,
         "distribuidor_nombre": distribuidor_nombre,
         "distribuidor_phone": distribuidor_phone,
         "productos": productos_actualizados,
-        "direccion": pedido["direccion"],
-        "notas": pedido.get("notas", ""),
+        "direccion": orden["direccion"],
+        "notas": orden.get("notas", ""),
         "fecha": datetime.now(),
-        "estado": "Procesando",
+        "estado": "Orden de compra creada",
         "subtotal": subtotal,
         "iva": iva_total,
-        "total": total_pedido,
+        "total": total_orden,
         "tipo_precio": tipo_precio
     }
 
-    result = await collection_pedidos.insert_one(nuevo_pedido)
-    print(f"📦 Pedido creado con ID: {pedido_id}")
+    result = await collection_ordenes.insert_one(nueva_orden)
+    print(f"📦 Orden de compra creada con ID: {orden_compra_id} y guardada en 'purchase_orders'")
 
     # Preparar mensajes de correo
-    fecha_pedido = datetime.now().strftime("%d/%m/%Y %H:%M")
+    fecha_orden = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     # Plantilla CSS para los correos
     estilo_correo = """
@@ -181,10 +175,7 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     </style>
     """
 
-    # --- AQUÍ SIGUE TODO TU CÓDIGO ORIGINAL DE CORREOS ---
-    # (No se modifica nada más, solo corregimos el error de stock)
-
-    # Mensaje para el administrador
+    # Tabla de productos (HTML)
     productos_html = """
     <table class="product-table">
         <thead>
@@ -197,7 +188,6 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         </thead>
         <tbody>
     """
-
     for p in productos_actualizados:
         productos_html += f"""
         <tr>
@@ -229,37 +219,37 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
         </div>
         {f'<div class="totals-row"><span>IVA (19%):</span><span>${iva_total:,.0f}</span></div>' if tipo_precio == "con_iva" else ""}
         <div class="totals-row total-final">
-            <span>Total del Pedido:</span>
-            <span>${total_pedido:,.0f}</span>
+            <span>Total de la Orden:</span>
+            <span>${total_orden:,.0f}</span>
         </div>
     </div>
     """
 
-    # Mensajes de correo (admin y distribuidor)
+    # 📧 Correos (admin/tesorería y CDI)
     mensaje_admin = f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Nuevo Pedido {pedido_id}</title>
+        <title>Nueva Orden de Compra {orden_compra_id}</title>
         {estilo_correo}
     </head>
     <body>
         <div class="container">
             <div class="header">
                 <img src="https://rizosfelicesdata.s3.us-east-2.amazonaws.com/logo+principal+rosado+letra+blanco_Mesa+de+tra+(1).png" alt="Rizos Felices" class="logo">
-                <h1>Nuevo Pedido Recibido</h1>
+                <h1>Nueva Orden de Compra Recibida</h1>
             </div>
             <div class="content">
-                <h2>Detalles del Pedido</h2>
-                <p><strong>Número de Pedido:</strong> {pedido_id}</p>
-                <p><strong>Fecha y Hora:</strong> {fecha_pedido}</p>
-                <p><strong>Estado:</strong> <span class="status">Procesando</span></p>
+                <h2>Detalles de la Orden</h2>
+                <p><strong>Número de Orden:</strong> {orden_compra_id}</p>
+                <p><strong>Fecha y Hora:</strong> {fecha_orden}</p>
+                <p><strong>Estado:</strong> <span class="status">Orden de compra creada</span></p>
                 <h3>Información del Distribuidor</h3>
                 <p><strong>Nombre:</strong> {distribuidor_nombre}</p>
                 <p><strong>Teléfono:</strong> {distribuidor_phone}</p>
                 <h3>Detalles de Entrega</h3>
-                <p><strong>Dirección:</strong> {pedido['direccion']}</p>
-                <p><strong>Notas:</strong> {pedido.get('notas', 'Ninguna')}</p>
+                <p><strong>Dirección:</strong> {orden['direccion']}</p>
+                <p><strong>Notas:</strong> {orden.get('notas', 'Ninguna')}</p>
                 <h3>Productos Solicitados</h3>
                 {productos_html}
                 {totales_html}
@@ -277,29 +267,29 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Confirmación de Pedido {pedido_id}</title>
+        <title>Confirmación de Orden de Compra {orden_compra_id}</title>
         {estilo_correo}
     </head>
     <body>
         <div class="container">
             <div class="header">
                 <img src="https://rizosfelicesdata.s3.us-east-2.amazonaws.com/logo+principal+rosado+letra+blanco_Mesa+de+tra+(1).png" alt="Rizos Felices" class="logo">
-                <h1>¡Gracias por tu pedido!</h1>
+                <h1>¡Gracias por tu orden de compra!</h1>
             </div>
             <div class="content">
-                <p>Hemos recibido tu pedido correctamente y está siendo procesado. A continuación encontrarás los detalles:</p>
-                <h2>Resumen del Pedido</h2>
-                <p><strong>Número de Pedido:</strong> {pedido_id}</p>
-                <p><strong>Fecha y Hora:</strong> {fecha_pedido}</p>
-                <p><strong>Estado:</strong> <span class="status">Procesando</span></p>
+                <p>Hemos recibido tu orden correctamente y está siendo procesada. A continuación encontrarás los detalles:</p>
+                <h2>Resumen de la Orden</h2>
+                <p><strong>Número de Orden:</strong> {orden_compra_id}</p>
+                <p><strong>Fecha y Hora:</strong> {fecha_orden}</p>
+                <p><strong>Estado:</strong> <span class="status">Orden de compra creada</span></p>
                 <h3>Detalles de Entrega</h3>
-                <p><strong>Dirección:</strong> {pedido['direccion']}</p>
-                <p><strong>Notas:</strong> {pedido.get('notas', 'Ninguna')}</p>
+                <p><strong>Dirección:</strong> {orden['direccion']}</p>
+                <p><strong>Notas:</strong> {orden.get('notas', 'Ninguna')}</p>
                 <h3>Productos</h3>
                 {productos_html}
                 {totales_html}
                 <p style="margin-top: 20px;">
-                    <strong>Nota:</strong> Te notificaremos cuando tu pedido esté en camino. 
+                    <strong>Nota:</strong> Te notificaremos cuando tu orden esté en camino.
                     Para cualquier consulta, puedes responder a este correo o contactarnos al teléfono de soporte.
                 </p>
             </div>
@@ -312,24 +302,24 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     </html>
     """
 
+    # Enviar a Tesorería
     enviar_correo(
         "tesoreria@rizosfelices.co",
-        f"📦 Nuevo Pedido: {pedido_id} - {distribuidor_nombre}",
+        f"📦 Nueva Orden de Compra: {orden_compra_id} - {distribuidor_nombre}",
         mensaje_admin
     )
+
+    # Enviar adicional al CDI según distribuidor
     correos_cdi = {
         "medellin": "cdimedellin@rizosfelices.co",
-        "guarne": "produccion@rizosfelices.co"  
+        "guarne": "produccion@rizosfelices.co"
     }
-
     cdi_distribuidor = distribuidor.get("cdi", "").lower()
     correo_cdi = correos_cdi.get(cdi_distribuidor)
-
-    # Solo enviar si el correo no está vacío
     if correo_cdi:
         enviar_correo(
             correo_cdi,
-            f"📦 Nuevo Pedido (CDI {cdi_distribuidor.capitalize()}): {pedido_id} - {distribuidor_nombre}",
+            f"📦 Nueva Orden de Compra (CDI {cdi_distribuidor.capitalize()}): {orden_compra_id} - {distribuidor_nombre}",
             mensaje_admin
         )
         print(f"📧 Correo adicional enviado a {correo_cdi}")
@@ -337,18 +327,18 @@ async def crear_pedido(pedido: dict, current_user: dict = Depends(get_current_us
     # Correo al distribuidor
     enviar_correo(
         current_user["email"],
-        f"✅ Confirmación de Pedido: {pedido_id}",
+        f"✅ Confirmación de Orden de Compra: {orden_compra_id}",
         mensaje_distribuidor
     )
-        
-    print(f"📧 Correos enviados para el pedido {pedido_id}")
+
+    print(f"📧 Correos enviados para la orden {orden_compra_id}")
 
     # Convertir ObjectId a string para la respuesta JSON
-    nuevo_pedido["_id"] = str(result.inserted_id)
+    nueva_orden["_id"] = str(result.inserted_id)
 
     return {
-        "message": "Pedido creado exitosamente",
-        "pedido": nuevo_pedido
+        "message": "Orden de compra creada exitosamente",
+        "orden_compra": nueva_orden
     }
 
 # ENDPOINT PARA OBTENER LOS PEDIDOS
@@ -448,7 +438,7 @@ async def obtener_pedidos(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Error interno al obtener pedidos")
 
 # Endpoint para obtener detalles de un pedido específico
-@router.get("/pedidos/{pedido_id}")
+@router.get("/ordenes/{pedido_id}")
 async def obtener_detalles_pedido(pedido_id: str, current_user: dict = Depends(get_current_user)):
     try:
         email = current_user["email"]
@@ -527,8 +517,8 @@ async def obtener_detalles_pedido(pedido_id: str, current_user: dict = Depends(g
         raise HTTPException(status_code=500, detail="Error interno al obtener detalles del pedido")
 
 # ENDPOINT PARA CAMBIAR ESTADO DE PEDIDO (facturado/en camino)
-@router.put("/pedidos/{pedido_id}/estado")
-async def cambiar_estado_pedido(
+@router.put("/ordenes/{pedido_id}/estado")
+async def cambiar_estado_orden(
     pedido_id: str,
     nuevo_estado: str = Body(..., embed=True),
     current_user: dict = Depends(get_current_user)
@@ -830,7 +820,7 @@ async def obtener_productos_populares(current_user: dict = Depends(get_current_u
             detail=f"Error al obtener productos populares: {str(e)}"
         )
 
-@router.get("/mis-pedidos")  # Si el prefijo es "/orders/pedidos"
+@router.get("/mis-ordenes")  # Si el prefijo es "/orders/pedidos"
 async def obtener_mis_pedidos(current_user: dict = Depends(get_current_user)):
     print("🚀 Entrando en obtener_mis_pedidos")
     try:
@@ -862,7 +852,7 @@ async def obtener_mis_pedidos(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         print(f"❌ Error al obtener pedidos: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error al obtener pedidos: {str(e)}")
-    
+        
 @router.get("/detalles-pedidos/{pedido_id}")
 async def obtener_detalles_pedido(
     pedido_id: str, 
