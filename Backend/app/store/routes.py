@@ -127,107 +127,123 @@ async def get_dashboard_bodega(current_user: dict = Depends(get_current_user)):
     }
 
 @router.post("/pedidos/procesar/{orden_id}")
-async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+async def procesar_pedido(
+    orden_id: str,
+    data: dict,
+    current_user: dict = Depends(get_current_user)
+):
     print(f"Procesando pedido para orden_id: {orden_id}")
     print(f"Usuario actual: {current_user}")
     print(f"Data recibida: {data}")
 
-    # 🔍 Buscar la orden en la colección de órdenes (purchase_orders)
+    # 🔍 Buscar la orden en la colección de órdenes
     orden = await collection_ordenes.find_one({"id": orden_id})
-    
     if not orden:
-        print("❌ Orden no encontrada en collection_ordenes")
         raise HTTPException(status_code=404, detail="Orden no encontrada")
-
     print(f"✅ Orden encontrada: {orden['id']}")
 
-    # ✅ Si llegamos aquí, la orden fue encontrada
     productos_actualizados = []
     subtotal, iva_total, total_orden = 0, 0, 0
-    tipo_precio = orden.get("tipo_precio", "sin_iva_internacional")
+    tipo_precio = orden.get("tipo_precio", "sin_iva")
     print(f"💰 Tipo de precio: {tipo_precio}")
 
-    # Obtener información completa de productos desde la orden original
+    # Productos originales de la orden
     productos_orden_original = orden.get("productos", [])
-    
-    # 🔄 ACTUALIZAR STOCK - Obtener bodega del usuario
-    bodega_usuario = await collection_bodegas.find_one({"correo_electronico": current_user["email"]})
+
+    # 🔄 Obtener la bodega del usuario
+    bodega_usuario = await collection_bodegas.find_one(
+        {"correo_electronico": current_user["email"]}
+    )
     if not bodega_usuario:
         raise HTTPException(status_code=404, detail="Bodega no encontrada para el usuario")
-    
-    cdi_bodega = bodega_usuario.get("cdi")  # "medellin" o "guarne"
+
+    cdi_bodega = bodega_usuario.get("cdi")
     print(f"🏭 Bodega procesando: {cdi_bodega}")
-    
+
+    # 🔄 Procesar productos
     for p_data in data.get("productos", []):
         producto_id = p_data["id"]
-        
-        # Buscar el producto completo en la orden original
-        producto_completo = None
-        for prod in productos_orden_original:
-            if prod.get("id") == producto_id:
-                producto_completo = prod
-                break
-        
+
+        # Buscar producto en la orden original
+        producto_completo = next(
+            (prod for prod in productos_orden_original if prod.get("id") == producto_id),
+            None
+        )
         if not producto_completo:
             print(f"⚠️ Producto {producto_id} no encontrado en orden original")
             continue
-            
+
         print(f"🛍️ Procesando producto: {producto_completo}")
-        
-        cantidad_final = int(p_data.get("cantidad_final", producto_completo.get("cantidad", 0)))
+
+        if "cantidad_final" not in p_data:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Producto {producto_id} no tiene cantidad_final definida"
+            )
+
+        cantidad_final = int(p_data["cantidad_final"])
         precio = float(p_data.get("precio", producto_completo.get("precio", 0)))
         iva_unitario = float(p_data.get("iva_unitario", producto_completo.get("iva_unitario", 0)))
         nombre = producto_completo.get("nombre", "Producto sin nombre")
+        cantidad_solicitada = producto_completo.get("cantidad", 0)
 
-        # 🔄 ACTUALIZAR STOCK del producto
+        # 📦 Stock actual en la bodega
         producto_db = await collection_productos.find_one({"id": producto_id})
-        if producto_db:
-            # Obtener stock actual (maneja tanto string como números)
-            stock_actual = producto_db.get("stock", {}).get(cdi_bodega, "0")
-            
-            # Convertir a número entero
-            try:
-                if isinstance(stock_actual, str):
-                    stock_actual = int(stock_actual) if stock_actual.isdigit() else 0
-                else:
-                    stock_actual = int(stock_actual)
-            except (ValueError, TypeError):
-                stock_actual = 0
-            
-            print(f"📦 Stock actual de {producto_id} en {cdi_bodega}: {stock_actual}")
-            
-            if cantidad_final > stock_actual:
-                raise HTTPException(status_code=400, detail=f"Stock insuficiente para producto {producto_id} en bodega {cdi_bodega}. Stock actual: {stock_actual}, Solicitado: {cantidad_final}")
-            
-            # Restar del stock y mantener como string (para consistencia con tu BD)
+        if not producto_db:
+            raise HTTPException(status_code=404, detail=f"Producto {producto_id} no encontrado en inventario")
+
+        stock_actual = producto_db.get("stock", {}).get(cdi_bodega, "0")
+        try:
+            stock_actual = int(stock_actual) if isinstance(stock_actual, str) else int(stock_actual)
+        except (ValueError, TypeError):
+            stock_actual = 0
+
+        print(f"📦 Stock actual de {producto_id} en {cdi_bodega}: {stock_actual}")
+
+        # ⚠️ Verificar stock solo si cantidad_final > 0
+        if cantidad_final > 0 and cantidad_final > stock_actual:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stock insuficiente para {nombre}. Disponible: {stock_actual}, solicitado: {cantidad_final}"
+            )
+
+        # ✅ Solo actualizar stock y cálculos si cantidad_final > 0
+        if cantidad_final > 0:
+            # Restar solo lo procesado (cantidad_final)
             nuevo_stock = stock_actual - cantidad_final
             await collection_productos.update_one(
                 {"id": producto_id},
                 {"$set": {f"stock.{cdi_bodega}": str(nuevo_stock)}}
             )
-            print(f"📦 Stock actualizado: {producto_id} en {cdi_bodega} de {stock_actual} to {nuevo_stock}")
-        else:
-            print(f"⚠️ Producto {producto_id} no encontrado en BD para actualizar stock")
-            raise HTTPException(status_code=404, detail=f"Producto {producto_id} no encontrado en inventario")
+            print(f"📦 Stock actualizado: {producto_id} en {cdi_bodega} de {stock_actual} a {nuevo_stock}")
 
-        total_producto = precio * cantidad_final
-        subtotal += precio * cantidad_final
-        iva_total += iva_unitario * cantidad_final
-        total_orden += total_producto + (iva_unitario * cantidad_final if tipo_precio == "con_iva" else 0)
+            # ✅ Cálculos
+            total_producto = precio * cantidad_final
+            subtotal += (precio - iva_unitario) * cantidad_final if tipo_precio != "con_iva" else precio * cantidad_final
+            iva_total += iva_unitario * cantidad_final
+            total_orden += total_producto if tipo_precio != "con_iva" else total_producto + iva_unitario * cantidad_final
 
-        productos_actualizados.append({
-            "id": producto_id,
-            "nombre": nombre,
-            "cantidad": cantidad_final,
+        # Agregar producto a la lista actualizada preservando TODOS los campos originales
+        producto_actualizado = {
+            **producto_completo,  # ← PRESERVAR TODOS LOS CAMPOS ORIGINALES
+            "cantidad_solicitada": cantidad_solicitada,  # ← NUEVO CAMPO
+            "cantidad": cantidad_final,   # ← Sobrescribir cantidad con lo realmente despachado
             "precio": precio,
             "precio_sin_iva": precio if tipo_precio != "con_iva" else precio - iva_unitario,
             "iva_unitario": iva_unitario,
-            "total": total_producto
-        })
-    
+            "total": precio * cantidad_final if cantidad_final > 0 else 0
+        }
+        
+        productos_actualizados.append(producto_actualizado)
+
     print(f"📦 Productos actualizados: {productos_actualizados}")
     print(f"🧮 Subtotal: {subtotal}, IVA total: {iva_total}, Total orden: {total_orden}")
 
+    # Obtener notas originales y notas de procesamiento
+    notas_orden_original = orden.get("notas", "")  # ← Notas originales de la orden
+    notas_procesamiento = data.get("notas", "")    # ← Notas del procesamiento
+
+    # Crear pedido final con AMBAS notas
     pedido_final = {
         **orden,
         "productos": productos_actualizados,
@@ -236,38 +252,38 @@ async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depend
         "total": total_orden,
         "estado": "Pedido creado",
         "fecha_procesado": datetime.utcnow(),
-        "notas": data.get("notas", ""),
+        "notas_orden_original": notas_orden_original,  # ← Notas originales
+        "notas_procesamiento": notas_procesamiento,    # ← Notas del procesamiento
         "procesado_por": current_user["email"],
         "bodega_procesadora": cdi_bodega
     }
-    
-    # Remover _id para evitar conflicto al insertar
+
     if "_id" in pedido_final:
         del pedido_final["_id"]
-    
-    print(f"✅ Pedido final a insertar: {pedido_final}")
 
-    # ✅ Insertar en colección de PEDIDOS
+    # Guardar en colección pedidos
     result_insert = await collection_pedidos.insert_one(pedido_final)
     print(f"📝 Pedido insertado en collection_pedidos con ID: {result_insert.inserted_id}")
 
-    # ✅ ACTUALIZAR estado de la orden original también a "Pedido creado"
+    # Actualizar estado de la orden original
     await collection_ordenes.update_one(
         {"id": orden_id},
         {"$set": {
             "estado": "Pedido creado",
             "fecha_procesado": datetime.utcnow(),
             "procesado_por": current_user["email"],
-            "bodega_procesadora": cdi_bodega
+            "bodega_procesadora": cdi_bodega,
+            "notas_procesamiento": notas_procesamiento  # ← También guardar notas de procesamiento en la orden
         }}
     )
     print(f"✅ Estado de orden {orden_id} actualizado a 'Pedido creado'")
 
+    # 📧 Datos para correo
     orden_compra_id = pedido_final["id"]
     distribuidor_nombre = orden.get("distribuidor_nombre", "")
     distribuidor_phone = orden.get("distribuidor_phone", orden.get("distribuidor_telefono", ""))
     fecha_orden = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+
     print(f"📧 Datos para correo: orden_compra_id={orden_compra_id}, distribuidor_nombre={distribuidor_nombre}")
 
     estilo_correo = """
@@ -285,15 +301,18 @@ async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depend
         .totals-row { display: flex; justify-content: space-between; margin-bottom: 8px; }
         .total-final { font-weight: bold; font-size: 1.1em; border-top: 1px solid #ddd; padding-top: 10px; }
         .status { display: inline-block; padding: 5px 10px; background-color: #e3f2fd; color: #1976d2; border-radius: 3px; }
+        .notes-section { background-color: #f5f5f5; padding: 15px; border-radius: 5px; margin: 15px 0; }
     </style>
     """
 
+    # Actualizar la tabla de productos para mostrar ambas cantidades
     productos_html = """
     <table class="product-table">
         <thead>
             <tr>
                 <th>Producto</th>
-                <th>Cantidad</th>
+                <th>Solicitado</th>
+                <th>Despachado</th>
                 <th>Precio Unitario</th>
                 <th>Total</th>
             </tr>
@@ -304,6 +323,7 @@ async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depend
         productos_html += f"""
         <tr>
             <td>{p['nombre']} (ID: {p['id']})</td>
+            <td>{p['cantidad_solicitada']}</td>
             <td>{p['cantidad']}</td>
             <td>${p['precio']:,.0f}</td>
             <td>${p['total']:,.0f}</td>
@@ -312,7 +332,7 @@ async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depend
         if tipo_precio == "con_iva":
             productos_html += f"""
             <tr style="color: #666; font-size: 0.9em;">
-                <td colspan="4">
+                <td colspan="5">
                     (IVA incluido: ${p['iva_unitario']:,.0f} x {p['cantidad']} = ${p['iva_unitario'] * p['cantidad']:,.0f})
                 </td>
             </tr>
@@ -320,6 +340,16 @@ async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depend
     productos_html += """
         </tbody>
     </table>
+    """
+
+    # Sección de notas para el correo
+    notas_html = f"""
+    <div class="notes-section">
+        <h4>Notas de la Orden Original</h4>
+        <p>{notas_orden_original or 'Ninguna'}</p>
+        <h4>Notas del Procesamiento</h4>
+        <p>{notas_procesamiento or 'Ninguna'}</p>
+    </div>
     """
 
     totales_html = f"""
@@ -359,7 +389,8 @@ async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depend
                 <p><strong>Teléfono:</strong> {distribuidor_phone}</p>
                 <h3>Detalles de Entrega</h3>
                 <p><strong>Dirección:</strong> {orden.get('direccion', 'No especificada')}</p>
-                <p><strong>Notas:</strong> {orden.get('notas', 'Ninguna')}</p>
+                <h3>Notas</h3>
+                {notas_html}
                 <h3>Productos Confirmados</h3>
                 {productos_html}
                 {totales_html}
@@ -394,7 +425,8 @@ async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depend
                 <p><strong>Estado:</strong> <span class="status">Pedido creado</span></p>
                 <h3>Detalles de Entrega</h3>
                 <p><strong>Dirección:</strong> {orden.get('direccion', 'No especificada')}</p>
-                <p><strong>Notas:</strong> {orden.get('notas', 'Ninguna')}</p>
+                <h3>Notas</h3>
+                <p>{notas_orden_original or 'Ninguna'}</p>
                 <h3>Productos</h3>
                 {productos_html}
                 {totales_html}
@@ -415,7 +447,7 @@ async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depend
     # ✅ CORREGIDO: Enviar los TRES correos como en el otro endpoint
     print("📤 Enviando correo a admin...")
     enviar_correo(
-        "tesoreria@rizosfelices.co",
+        "rivejuan987@gmail.com",
         f"📦 Nuevo Pedido: {orden_compra_id} - {distribuidor_nombre}",
         mensaje_admin
     )
@@ -426,8 +458,8 @@ async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depend
     
     print(f"🏢 CDI distribuidor: {cdi_distribuidor}")
     correos_cdi = {
-        "medellin": "cdimedellin@rizosfelices.co",
-        "guarne": "produccion@rizosfelices.co"
+        "medellin": "rivejuan987@gmail.com",
+        "guarne": "rivejuan987@gmail.com"
     }
     correo_cdi = correos_cdi.get(cdi_distribuidor)
     print(f"📧 Correo CDI: {correo_cdi}")
@@ -453,7 +485,7 @@ async def procesar_pedido(orden_id: str, data: dict, current_user: dict = Depend
         "message": "Pedido procesado y correos enviados",
         "pedido": {**pedido_final, "_id": str(result_insert.inserted_id)}
     }
-
+    
 @router.get("/get-all-orders/")
 async def obtener_ordenes(current_user: dict = Depends(get_current_user)):
     try:

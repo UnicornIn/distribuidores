@@ -304,15 +304,15 @@ async def crear_orden_compra(orden: dict, current_user: dict = Depends(get_curre
 
     # Enviar a Tesorería
     enviar_correo(
-        "tesoreria@rizosfelices.co",
+        "rivejuan987@gmail.com",
         f"📦 Nueva Orden de Compra: {orden_compra_id} - {distribuidor_nombre}",
         mensaje_admin
     )
 
     # Enviar adicional al CDI según distribuidor
     correos_cdi = {
-        "medellin": "cdimedellin@rizosfelices.co",
-        "guarne": "produccion@rizosfelices.co"
+        "medellin": "rivejuan987@gmail.com",
+        "guarne": "privejuan987@gmail.com"
     }
     cdi_distribuidor = distribuidor.get("cdi", "").lower()
     correo_cdi = correos_cdi.get(cdi_distribuidor)
@@ -886,7 +886,7 @@ async def obtener_detalles_pedido(
             admin = await collection_admin.find_one({"correo_electronico": email})
             if not admin:
                 raise HTTPException(status_code=404, detail="Admin no encontrado")
-            
+
             distribuidor = await collection_distribuidores.find_one({"_id": ObjectId(pedido.get("distribuidor_id"))})
             if not distribuidor or str(distribuidor.get("admin_id")) != str(admin["_id"]):
                 raise HTTPException(status_code=403, detail="No autorizado para este pedido")
@@ -920,13 +920,29 @@ async def obtener_detalles_pedido(
 
         # 3. FORMATEAR RESPUESTA
         productos = pedido.get("productos", [])
+        distribuidor_info = await obtener_info_distribuidor(pedido.get("distribuidor_id"))
+
         response = {
             "id": pedido.get("id"),
             "fecha": pedido.get("fecha", datetime.now().isoformat()),
             "estado": pedido.get("estado", "pendiente"),
             "productos": productos,
             "total": sum(p.get("precio", 0) * p.get("cantidad", 0) for p in productos),
-            "distribuidor": await obtener_info_distribuidor(pedido.get("distribuidor_id"))
+            "distribuidor_id": pedido.get("distribuidor_id"),
+            "distribuidor_nombre": pedido.get("distribuidor_nombre"),
+            "distribuidor_phone": pedido.get("distribuidor_phone"),
+            "direccion": pedido.get("direccion"),  # ✅ Añadir esta línea
+            "notas": pedido.get("notas"),
+            "subtotal": pedido.get("subtotal", 0),
+            "iva": pedido.get("iva", 0),
+            "total": pedido.get("total", 0),
+            "tipo_precio": pedido.get("tipo_precio"),
+            "bodega_procesadora": pedido.get("bodega_procesadora"),
+            "fecha_procesado": pedido.get("fecha_procesado"),
+            "procesado_por": pedido.get("procesado_por"),
+            "notas_procesamiento": pedido.get("notas_procesamiento"),
+            "notas_orden_original": pedido.get("notas_orden_original"),
+            "distribuidor_info": distribuidor_info  # Información adicional del distribuidor
         }
 
         return {"pedido": response}
