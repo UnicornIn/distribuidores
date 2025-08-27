@@ -447,7 +447,7 @@ async def procesar_pedido(
     # ✅ CORREGIDO: Enviar los TRES correos como en el otro endpoint
     print("📤 Enviando correo a admin...")
     enviar_correo(
-        "rivejuan987@gmail.com",
+        "tesoreria@rizosfelices.co",
         f"📦 Nuevo Pedido: {orden_compra_id} - {distribuidor_nombre}",
         mensaje_admin
     )
@@ -458,8 +458,8 @@ async def procesar_pedido(
     
     print(f"🏢 CDI distribuidor: {cdi_distribuidor}")
     correos_cdi = {
-        "medellin": "rivejuan987@gmail.com",
-        "guarne": "rivejuan987@gmail.com"
+        "medellin": "cdimedellin@rizosfelices.co",
+        "guarne": "produccion@rizosfelices.co"
     }
     correo_cdi = correos_cdi.get(cdi_distribuidor)
     print(f"📧 Correo CDI: {correo_cdi}")

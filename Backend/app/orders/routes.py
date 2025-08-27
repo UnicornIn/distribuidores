@@ -304,15 +304,15 @@ async def crear_orden_compra(orden: dict, current_user: dict = Depends(get_curre
 
     # Enviar a Tesorería
     enviar_correo(
-        "rivejuan987@gmail.com",
+        "tesoreria@rizosfelices.co",
         f"📦 Nueva Orden de Compra: {orden_compra_id} - {distribuidor_nombre}",
         mensaje_admin
     )
 
     # Enviar adicional al CDI según distribuidor
     correos_cdi = {
-        "medellin": "rivejuan987@gmail.com",
-        "guarne": "privejuan987@gmail.com"
+        "medellin": "cdimedellin@rizosfelices.co",
+        "guarne": "produccion@rizosfelices.co"
     }
     cdi_distribuidor = distribuidor.get("cdi", "").lower()
     correo_cdi = correos_cdi.get(cdi_distribuidor)
