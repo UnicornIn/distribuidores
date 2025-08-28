@@ -88,16 +88,16 @@ async def crear_orden_compra(orden: dict, current_user: dict = Depends(get_curre
         if not producto_db:
             raise HTTPException(status_code=404, detail=f"Producto con ID {producto_id} no encontrado")
 
-        # Obtener el stock actual y convertirlo a int
-        stock_actual = producto_db.get("stock", 0)
-        if isinstance(stock_actual, dict):
-            # Si en tu esquema usas un dict por bodegas y aquí no segmentas por bodega, toma cualquier valor (o ajusta según tu lógica)
-            stock_actual = int(list(stock_actual.values())[0])
-        else:
-            stock_actual = int(stock_actual)
+        # # Obtener el stock actual y convertirlo a int
+        # stock_actual = producto_db.get("stock", 0)
+        # if isinstance(stock_actual, dict):
+        #     # Si en tu esquema usas un dict por bodegas y aquí no segmentas por bodega, toma cualquier valor (o ajusta según tu lógica)
+        #     stock_actual = int(list(stock_actual.values())[0])
+        # else:
+        #     stock_actual = int(stock_actual)
 
-        if cantidad_solicitada > stock_actual:
-            raise HTTPException(status_code=400, detail=f"Stock insuficiente para producto {producto_id}")
+        # if cantidad_solicitada > stock_actual:
+        #     raise HTTPException(status_code=400, detail=f"Stock insuficiente para producto {producto_id}")
 
         # Calcular precio con o sin IVA
         if tipo_precio == "con_iva":
