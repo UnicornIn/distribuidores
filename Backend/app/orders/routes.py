@@ -133,12 +133,15 @@ async def crear_orden_compra(orden: dict, current_user: dict = Depends(get_curre
     print(f"📦 Subtotal: {subtotal}, IVA Total: {iva_total}, Total Orden: {total_orden}")
 
     # ── Validar mínimo de compra ──────────────────────────────────────────────
+    # El mínimo se evalúa sobre el subtotal (valor de mercancía SIN IVA), para que
+    # el criterio sea consistente sin importar el tipo_precio del distribuidor y
+    # el IVA no infle el total haciendo pasar pedidos que no alcanzan el mínimo.
     minimo_compra = distribuidor.get("minimo_compra")
-    if minimo_compra is not None and total_orden < minimo_compra:
+    if minimo_compra is not None and subtotal < minimo_compra:
         raise HTTPException(
             status_code=400,
-            detail=f"El monto mínimo de compra es ${minimo_compra:,.0f} COP. "
-                    f"Tu orden es de ${total_orden:,.0f} COP."
+            detail=f"El monto mínimo de compra es ${minimo_compra:,.0f} COP (sin IVA). "
+                    f"El subtotal de tu orden es de ${subtotal:,.0f} COP."
         )
 
     # Crear ORDEN DE COMPRA en la base de datos
