@@ -1,36 +1,27 @@
 """
-Lista de precios especiales de exportacion.
+Listas de precios especiales de exportacion.
 
-Parche acotado y temporal: dos clientes de exportacion tienen precios pactados
-distintos al catalogo. Se resuelve en el servidor para que el precio no dependa
-de lo que mande el cliente y para que ningun otro usuario pueda verlo.
+Parche acotado y temporal: algunos clientes de exportacion tienen precios
+pactados distintos al catalogo, y distintos entre si. Se resuelven en el
+servidor para que el precio no dependa de lo que mande el cliente y para que
+ningun otro usuario pueda verlos.
 
-Si un producto no esta en PRECIOS_ESPECIALES, o el usuario no esta en
-CLIENTES_PRECIO_ESPECIAL, estas funciones devuelven None y el sistema se
-comporta exactamente igual que antes. Ese es el modo seguro por defecto.
+Si el correo no tiene lista asignada, o el producto no esta en su lista, estas
+funciones devuelven None y el sistema se comporta exactamente igual que antes.
+Ese es el modo seguro por defecto.
+
+Para agregar un cliente: definir su lista y registrarlo en LISTAS_POR_CLIENTE.
+Los IDs de producto salen de:  python Backend/scripts/dump_catalogo.py
 """
-
-# Correos autorizados. La identidad viene del JWT (campo "sub"), que el backend
-# firma en el login, no de nada que el cliente pueda elegir en el request.
-CLIENTES_PRECIO_ESPECIAL = {
-    "vzcb.ccs8@gmail.com",    # Marines Monserrat (persona natural) - Caracas, VE
-    "rizosvisage@gmail.com",  # Rizos Visage Store, C.A. (empresa)   - Caracas, VE
-}
 
 MONEDA = "USD"
 
-# PENDIENTE: llenar con los IDs reales del catalogo.
-# Generar el borrador con:  python Backend/scripts/dump_catalogo.py
-#
-# Mientras este diccionario este vacio el parche no hace nada: ningun producto
-# hace match y todos los clientes siguen viendo y pagando el precio de siempre.
-#
-# Precios pactados (USD por unidad):
-#   Linea Special 250 ml (Shampoo, Acondicionador, Crema 3 en 1, Gel, Detangler) = 8
-#   Linea Men 250 ml     (Shampoo, Acondicionador, Crema 3 en 1, Gel)            = 8
-#   Linea Profesional 1 L (Shampoo, Acondicionador, Crema 3 en 1, Gel)           = 21
-#   Aceite capilar 120 ml                                                        = 10
-PRECIOS_ESPECIALES = {
+
+# ---------------------------------------------------------------------------
+# Lista 1 - Exportacion Venezuela (Caracas)
+#   Special 250 ml = 8 | Men 250 ml = 8 | Profesional 1 L = 21 | Aceite = 10
+# ---------------------------------------------------------------------------
+LISTA_EXPORT_VE = {
     # --- Linea Special 250 ml -> USD 8 ---
     "P002": 8,   # SHAMPOO 250 ML
     "P003": 8,   # ACONDICIONADOR 250 ML
@@ -55,9 +46,53 @@ PRECIOS_ESPECIALES = {
     "P025": 10,  # ACEITE 120 ML
 }
 
-# Excluidos a proposito (estan en el catalogo pero NO en la cotizacion).
-# Si alguno deberia entrar, agregarlo arriba con su precio pactado:
-#   P021-P024  USO SALON ... MEN (variantes 1 L de la linea Men)
+
+# ---------------------------------------------------------------------------
+# Lista 2 - Rizos Felices Mexico
+#   250 ml = 5 | 1 L = 17 | Aceite = 6
+# ---------------------------------------------------------------------------
+LISTA_MEXICO = {
+    # --- 250 ml (Special y Men) -> USD 5 ---
+    "P002": 5,   # SHAMPOO 250 ML
+    "P003": 5,   # ACONDICIONADOR 250 ML
+    "P004": 5,   # CREMA 3 EN 1 250 ML
+    "P005": 5,   # GEL 250 ML
+    "P007": 5,   # SHAMPOO MEN 250 ML
+    "P008": 5,   # ACONDICIONADOR MEN 250 ML
+    "P009": 5,   # GEL MEN 250 ML
+    "P010": 5,   # CREMA 3 EN 1 MEN 250 ML
+
+    # --- 1 L (categoria USO SALON) -> USD 17 ---
+    "P016": 17,  # USO SALON GEL MOLDEADOR
+    "P017": 17,  # USO SALON ACONDICIONADOR
+    "P018": 17,  # USO SALON CREMA 3 EN 1
+    "P019": 17,  # USO SALON SHAMPOO
+    # PENDIENTE DE CONFIRMAR: las variantes MEN de 1 L (P021-P024) tambien
+    # existen a 17.9 en el catalogo. "Litro a 17" podria incluirlas. Quedaron
+    # fuera por consistencia con la lista de Venezuela. Para incluirlas,
+    # descomentar:
+    # "P021": 17,  # USO SALON GEL MOLDEADOR MEN
+    # "P022": 17,  # USO SALON ACONDICIONADOR MEN
+    # "P023": 17,  # USO SALON CREMA 3 EN 1 MEN
+    # "P024": 17,  # USO SALON SHAMPOO MEN
+
+    # --- Aceite capilar 120 ml -> USD 6 ---
+    "P025": 6,   # ACEITE 120 ML
+}
+
+
+# Correo autenticado -> lista que le aplica. La identidad viene del JWT
+# (campo "sub"), que el backend firma en el login, no de nada que el cliente
+# pueda elegir en el request.
+LISTAS_POR_CLIENTE = {
+    "vzcb.ccs8@gmail.com": LISTA_EXPORT_VE,               # Marines Monserrat (persona natural), Caracas VE
+    "rizosvisage@gmail.com": LISTA_EXPORT_VE,             # Rizos Visage Store, C.A. (empresa), Caracas VE
+    "natalia.arredondo@rizosfelices.mx": LISTA_MEXICO,    # Rizos Felices Mexico
+}
+
+
+# Productos del catalogo que ninguna lista cubre. Si alguno deberia entrar,
+# agregarlo a la lista correspondiente con su precio pactado:
 #   P034       Mascarilla Color Balance
 #   P028       Producto de prueba
 #   P030-P033  Camisetas y capas (accesorios)
@@ -68,8 +103,8 @@ def _normalizar(email):
 
 
 def es_cliente_especial(email) -> bool:
-    """True si el correo autenticado tiene lista de precios especial."""
-    return _normalizar(email) in CLIENTES_PRECIO_ESPECIAL
+    """True si el correo autenticado tiene una lista de precios asignada."""
+    return _normalizar(email) in LISTAS_POR_CLIENTE
 
 
 def precio_especial(email, producto_id):
@@ -77,8 +112,9 @@ def precio_especial(email, producto_id):
     Precio pactado para ese cliente y ese producto, o None si no aplica.
 
     None significa "usar el precio normal": es la salida segura cuando el
-    cliente no esta autorizado o el producto no esta mapeado todavia.
+    cliente no tiene lista asignada o el producto no esta en su lista.
     """
-    if not es_cliente_especial(email):
+    lista = LISTAS_POR_CLIENTE.get(_normalizar(email))
+    if lista is None:
         return None
-    return PRECIOS_ESPECIALES.get(producto_id)
+    return lista.get(producto_id)
