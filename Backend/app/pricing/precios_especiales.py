@@ -49,7 +49,10 @@ LISTA_EXPORT_VE = {
 
 # ---------------------------------------------------------------------------
 # Lista 2 - Rizos Felices Mexico
-#   250 ml = 5 | 1 L = 17 | Aceite = 6
+#   250 ml = 5 | 1 L = 17 (todos los de litro) | Aceite = 6
+#
+# El correo todavia no existe en la base: la lista queda lista de antemano
+# para que el usuario arranque con sus precios desde el primer pedido.
 # ---------------------------------------------------------------------------
 LISTA_MEXICO = {
     # --- 250 ml (Special y Men) -> USD 5 ---
@@ -62,19 +65,15 @@ LISTA_MEXICO = {
     "P009": 5,   # GEL MEN 250 ML
     "P010": 5,   # CREMA 3 EN 1 MEN 250 ML
 
-    # --- 1 L (categoria USO SALON) -> USD 17 ---
+    # --- 1 L (categoria USO SALON) -> USD 17, TODOS los productos de litro ---
     "P016": 17,  # USO SALON GEL MOLDEADOR
     "P017": 17,  # USO SALON ACONDICIONADOR
     "P018": 17,  # USO SALON CREMA 3 EN 1
     "P019": 17,  # USO SALON SHAMPOO
-    # PENDIENTE DE CONFIRMAR: las variantes MEN de 1 L (P021-P024) tambien
-    # existen a 17.9 en el catalogo. "Litro a 17" podria incluirlas. Quedaron
-    # fuera por consistencia con la lista de Venezuela. Para incluirlas,
-    # descomentar:
-    # "P021": 17,  # USO SALON GEL MOLDEADOR MEN
-    # "P022": 17,  # USO SALON ACONDICIONADOR MEN
-    # "P023": 17,  # USO SALON CREMA 3 EN 1 MEN
-    # "P024": 17,  # USO SALON SHAMPOO MEN
+    "P021": 17,  # USO SALON GEL MOLDEADOR MEN
+    "P022": 17,  # USO SALON ACONDICIONADOR MEN
+    "P023": 17,  # USO SALON CREMA 3 EN 1 MEN
+    "P024": 17,  # USO SALON SHAMPOO MEN
 
     # --- Aceite capilar 120 ml -> USD 6 ---
     "P025": 6,   # ACEITE 120 ML
