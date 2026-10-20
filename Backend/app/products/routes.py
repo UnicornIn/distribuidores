@@ -13,6 +13,7 @@ from app.products.models import (
     ProductCreate,
     ProductoUpdate
 )
+from app.pricing.precios_especiales import MONEDA, precio_especial
 
 router = APIRouter()
 
@@ -84,6 +85,14 @@ async def obtener_productos_disponibles(
                 elif tipo_precio == "sin_iva_internacional":
                     producto_data["precio"] = precios.get("internacional", 0)
                     producto_data["tipo_precio"] = "sin_iva_internacional"
+
+                # Lista de precios especial de exportacion. Solo se aplica a los
+                # correos autorizados: ningun otro usuario recibe estos valores
+                # en la respuesta de la API.
+                especial = precio_especial(current_user["email"], producto["id"])
+                if especial is not None:
+                    producto_data["precio"] = especial
+                    producto_data["moneda"] = MONEDA
 
             else:
                 # Admin u otros roles: ver todos los precios y stocks

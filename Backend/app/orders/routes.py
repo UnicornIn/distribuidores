@@ -14,6 +14,11 @@ from app.core.database import (
     collection_bodegas,
     collection_ordenes
 )
+from app.pricing.precios_especiales import (
+    MONEDA,
+    es_cliente_especial,
+    precio_especial,
+)
 
 router = APIRouter()
 
@@ -56,6 +61,7 @@ async def crear_orden_compra(orden: dict, current_user: dict = Depends(get_curre
     distribuidor_nombre = distribuidor.get("nombre", "Desconocido")
     distribuidor_phone = distribuidor.get("phone", "No registrado")
     tipo_precio = distribuidor.get("tipo_precio", "con_iva")
+    aplica_precio_especial = es_cliente_especial(current_user["email"])
 
     print(f"📢 Distribuidor encontrado: {distribuidor_nombre}, Tipo de precio: {tipo_precio}")
 
@@ -81,6 +87,12 @@ async def crear_orden_compra(orden: dict, current_user: dict = Depends(get_curre
         producto_id = producto["id"]
         cantidad_solicitada = int(producto["cantidad"])
         precio_sin_iva = float(producto["precio"])  # 💡 Precio enviado desde el frontend sin IVA
+
+        # El precio que manda el cliente no es confiable. Para los clientes con
+        # lista especial lo resolvemos en el servidor e ignoramos el del body.
+        precio_pactado = precio_especial(current_user["email"], producto_id)
+        if precio_pactado is not None:
+            precio_sin_iva = float(precio_pactado)
 
         print(f"🔍 Verificando producto {producto_id}")
 
@@ -137,6 +149,10 @@ async def crear_orden_compra(orden: dict, current_user: dict = Depends(get_curre
     # el criterio sea consistente sin importar el tipo_precio del distribuidor y
     # el IVA no infle el total haciendo pasar pedidos que no alcanzan el mínimo.
     minimo_compra = distribuidor.get("minimo_compra")
+    if aplica_precio_especial:
+        # El minimo esta expresado en COP y esta lista cotiza en USD.
+        # Compararlos rechazaria todos los pedidos de estos clientes.
+        minimo_compra = None
     if minimo_compra is not None and subtotal < minimo_compra:
         raise HTTPException(
             status_code=400,
@@ -159,7 +175,11 @@ async def crear_orden_compra(orden: dict, current_user: dict = Depends(get_curre
         "subtotal": subtotal,
         "iva": iva_total,
         "total": total_orden,
-        "tipo_precio": tipo_precio
+        "tipo_precio": tipo_precio,
+        # Deja constancia en la orden de que el precio ya viene pactado, para que
+        # al despacharla no se vuelva a tomar del request.
+        "lista_precio_especial": aplica_precio_especial,
+        "moneda": MONEDA if aplica_precio_especial else "COP"
     }
 
     result = await collection_ordenes.insert_one(nueva_orden)

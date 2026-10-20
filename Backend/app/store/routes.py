@@ -182,7 +182,12 @@ async def procesar_pedido(
             )
 
         cantidad_final = int(p_data["cantidad_final"])
-        precio = float(p_data.get("precio", producto_completo.get("precio", 0)))
+        # En ordenes con lista especial el precio queda congelado al crearse:
+        # al despachar no se acepta un precio distinto desde el request.
+        if orden.get("lista_precio_especial"):
+            precio = float(producto_completo.get("precio", 0))
+        else:
+            precio = float(p_data.get("precio", producto_completo.get("precio", 0)))
         iva_unitario = float(p_data.get("iva_unitario", producto_completo.get("iva_unitario", 0)))
         nombre = producto_completo.get("nombre", "Producto sin nombre")
         cantidad_solicitada = producto_completo.get("cantidad", 0)
