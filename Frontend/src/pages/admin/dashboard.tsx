@@ -133,7 +133,7 @@ export default function AdminDashboardPage() {
       const token = localStorage.getItem("access_token");
       if (!token) throw new Error("No autenticado");
 
-      const response = await fetch("https://api.rizosfelices.co/api/productos/populares", {
+      const response = await fetch("https://api.rizosfelices.co/orders/productos/populares", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
