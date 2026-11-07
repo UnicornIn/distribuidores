@@ -29,6 +29,30 @@ print("EMAIL_PASSWORD:", EMAIL_PASSWORD)
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 465  # Puerto seguro con SSL
 
+def calcular_totales_pedido(productos):
+    """Totales de un pedido a partir de sus líneas.
+
+    Invariante del modelo: `precio` es el precio unitario FINAL que paga el
+    distribuidor (ya trae el IVA incluido en los pedidos "con_iva", porque así
+    lo guarda `create-purchase-order`) y `iva_unitario` es la porción de ese
+    precio que corresponde al IVA. Por eso el IVA se RESTA del total para
+    obtener el subtotal; nunca se suma encima, o quedaría contado dos veces.
+
+    Se calcula aquí en vez de leer `pedido["subtotal"] / ["total"]` porque los
+    pedidos despachados antes de arreglar `procesar_pedido` quedaron guardados
+    con el subtotal con IVA y el total con el IVA duplicado.
+    """
+    total = sum(
+        float(p.get("precio", 0) or 0) * float(p.get("cantidad", 0) or 0)
+        for p in productos
+    )
+    iva = sum(
+        float(p.get("iva_unitario", 0) or 0) * float(p.get("cantidad", 0) or 0)
+        for p in productos
+    )
+    return {"subtotal": total - iva, "iva": iva, "total": total}
+
+
 def enviar_correo(destinatario, asunto, mensaje):
     msg = EmailMessage()
     msg["Subject"] = asunto
@@ -442,6 +466,7 @@ async def obtener_pedidos(current_user: dict = Depends(get_current_user)):
                     producto["precio"] = producto.get("precio_sin_iva", producto["precio"])
                     producto["iva_unitario"] = 0
             
+            totales = calcular_totales_pedido(pedido.get("productos", []))
             pedido_formateado = {
                 "id": pedido.get("id", str(pedido["_id"])),
                 "_id": str(pedido["_id"]),
@@ -453,8 +478,10 @@ async def obtener_pedidos(current_user: dict = Depends(get_current_user)):
                 "distribuidor_telefono": info_distribuidor["telefono"],
                 "distribuidor_email": info_distribuidor["email"],
                 "distribuidor_id": pedido["distribuidor_id"],
-                "total": sum(p["precio"] * p["cantidad"] for p in pedido.get("productos", [])),
-                "total_iva": sum(p.get("iva_unitario", 0) * p["cantidad"] for p in pedido.get("productos", []))
+                "subtotal": totales["subtotal"],
+                "iva": totales["iva"],
+                "total": totales["total"],
+                "total_iva": totales["iva"]
             }
             pedidos_formateados.append(pedido_formateado)
         
@@ -535,9 +562,17 @@ async def obtener_detalles_pedido(pedido_id: str, current_user: dict = Depends(g
         pedido["distribuidor_nombre"] = distribuidor.get("nombre") if distribuidor else "Desconocido"
         pedido["distribuidor_telefono"] = distribuidor.get("telefono") if distribuidor else ""
 
-        # Calcular totales
-        pedido["total"] = sum(p["precio"] * p["cantidad"] for p in pedido.get("productos", []))
-        pedido["total_iva"] = sum(p.get("iva_unitario", 0) * p["cantidad"] for p in pedido.get("productos", []))
+        # Calcular totales a partir de las líneas del pedido.
+        # `precio` ya incluye el IVA cuando el pedido es "con_iva", así que el
+        # total es la suma de las líneas y el IVA solo se separa del subtotal
+        # (no se vuelve a sumar). Se recalcula en vez de confiar en los campos
+        # guardados porque los pedidos despachados antes de este arreglo tienen
+        # el subtotal con IVA y el total con el IVA duplicado.
+        totales = calcular_totales_pedido(pedido.get("productos", []))
+        pedido["subtotal"] = totales["subtotal"]
+        pedido["iva"] = totales["iva"]
+        pedido["total"] = totales["total"]
+        pedido["total_iva"] = totales["iva"]
 
         print("✅ Devolviendo detalles del pedido")
         return {"pedido": pedido}
@@ -953,21 +988,25 @@ async def obtener_detalles_pedido(
         # 3. FORMATEAR RESPUESTA
         productos = pedido.get("productos", [])
         distribuidor_info = await obtener_info_distribuidor(pedido.get("distribuidor_id"))
+        # Se recalculan los totales desde las líneas en vez de usar los campos
+        # guardados: los pedidos despachados antes del arreglo de
+        # `procesar_pedido` tienen el subtotal con IVA y el total con el IVA
+        # sumado dos veces.
+        totales = calcular_totales_pedido(productos)
 
         response = {
             "id": pedido.get("id"),
             "fecha": pedido.get("fecha", datetime.now().isoformat()),
             "estado": pedido.get("estado", "pendiente"),
             "productos": productos,
-            "total": sum(p.get("precio", 0) * p.get("cantidad", 0) for p in productos),
             "distribuidor_id": pedido.get("distribuidor_id"),
             "distribuidor_nombre": pedido.get("distribuidor_nombre"),
             "distribuidor_phone": pedido.get("distribuidor_phone"),
             "direccion": pedido.get("direccion"),  # ✅ Añadir esta línea
             "notas": pedido.get("notas"),
-            "subtotal": pedido.get("subtotal", 0),
-            "iva": pedido.get("iva", 0),
-            "total": pedido.get("total", 0),
+            "subtotal": totales["subtotal"],
+            "iva": totales["iva"],
+            "total": totales["total"],
             "tipo_precio": pedido.get("tipo_precio"),
             "bodega_procesadora": pedido.get("bodega_procesadora"),
             "fecha_procesado": pedido.get("fecha_procesado"),
