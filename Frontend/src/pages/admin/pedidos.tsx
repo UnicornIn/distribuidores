@@ -10,8 +10,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Search, Package, ChevronLeft, ChevronRight } from "lucide-react";
 import { PedidoActions } from "../../components/PedidoActions";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
-import { Pedido, EstadoPedido } from "../../api/typeStatus";
+import { Pedido, Producto, EstadoPedido } from "../../api/typeStatus";
 import { fetchPedidos, fetchPedidoById, updateEstadoPedido } from "../../api/pedidoActions";
+
+/**
+ * Base gravable unitaria. `producto.precio` llega con el IVA ya incluido en los
+ * pedidos "con_iva" y el IVA se muestra en su propia columna, asi que la
+ * columna de precio unitario tiene que mostrar la base; si no, el IVA se lee
+ * dos veces.
+ */
+const baseUnitaria = (producto: Producto) =>
+  producto.precio_sin_iva || producto.precio - (producto.iva_unitario || 0);
 
 export default function AdminPedidosPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>([]);
@@ -163,7 +172,7 @@ export default function AdminPedidosPage() {
                     <tr>
                       <th>Producto</th>
                       <th>Cantidad</th>
-                      <th>Precio Unitario</th>
+                      <th>Precio Unitario (sin IVA)</th>
                       <th>IVA</th>
                       <th>Subtotal</th>
                     </tr>
@@ -173,9 +182,9 @@ export default function AdminPedidosPage() {
                       <tr>
                         <td>${producto.nombre}</td>
                         <td>${producto.cantidad}</td>
-                        <td>$${formatNumber(producto.precio)}</td>
+                        <td>$${formatNumber(baseUnitaria(producto))}</td>
                         <td>${producto.iva_unitario ? `$${formatNumber(producto.iva_unitario)}` : 'N/A'}</td>
-                        <td>$${formatNumber(producto.total)}</td>
+                        <td>$${formatNumber(baseUnitaria(producto) * producto.cantidad)}</td>
                       </tr>
                     `).join('')}
                   </tbody>
@@ -497,8 +506,8 @@ export default function AdminPedidosPage() {
                         <p className="text-sm text-muted-foreground">Cantidad: {producto.cantidad}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Precio unitario</p>
-                        <p className="font-medium">${formatNumber(producto.precio)}</p>
+                        <p className="text-sm text-muted-foreground">Precio unitario (sin IVA)</p>
+                        <p className="font-medium">${formatNumber(baseUnitaria(producto))}</p>
                       </div>
                       {producto.iva_unitario > 0 && (
                         <div className="text-right">
@@ -508,7 +517,7 @@ export default function AdminPedidosPage() {
                       )}
                       <div className="col-span-3 md:col-span-1 text-right">
                         <p className="text-sm text-muted-foreground">Subtotal</p>
-                        <p className="font-medium">${formatNumber(producto.total)}</p>
+                        <p className="font-medium">${formatNumber(baseUnitaria(producto) * producto.cantidad)}</p>
                       </div>
                     </div>
                   ))}

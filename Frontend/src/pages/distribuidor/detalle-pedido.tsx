@@ -11,11 +11,22 @@ import { Alert, AlertDescription, AlertTitle } from "../../components/ui/alert";
 type ProductoDetalle = {
   id: string;
   nombre: string;
+  /** Precio unitario final: ya incluye el IVA cuando el pedido es "con_iva". */
   precio: number;
+  /** Porcion de `precio` que corresponde al IVA. */
   iva_unitario: number;
+  precio_sin_iva?: number;
   cantidad: number;
   tipo_precio: string;
 };
+
+/**
+ * Base gravable unitaria. `precio` llega con el IVA incluido y `iva_unitario`
+ * se muestra en su propia columna, asi que la columna de precio unitario debe
+ * mostrar la base; si no, el IVA se lee dos veces.
+ */
+const baseUnitaria = (producto: ProductoDetalle) =>
+  producto.precio_sin_iva ?? producto.precio - (producto.iva_unitario || 0);
 
 type PedidoDetalle = {
   id: string;
@@ -176,7 +187,7 @@ export default function DetallePedidoPage() {
                       <tr className="border-b">
                         <th className="text-left pb-2 pl-2">Producto</th>
                         <th className="text-right pb-2">Cantidad</th>
-                        <th className="text-right pb-2">Precio unitario</th>
+                        <th className="text-right pb-2">Precio unitario (sin IVA)</th>
                         <th className="text-right pb-2">IVA unitario</th>
                         <th className="text-right pb-2 pr-2">Subtotal</th>
                       </tr>
@@ -188,9 +199,9 @@ export default function DetallePedidoPage() {
                             <p className="font-medium">{producto.nombre}</p>
                           </td>
                           <td className="text-right py-3">{producto.cantidad}</td>
-                          <td className="text-right py-3">${formatNumber(producto.precio)}</td>
+                          <td className="text-right py-3">${formatNumber(baseUnitaria(producto))}</td>
                           <td className="text-right py-3">${formatNumber(producto.iva_unitario)}</td>
-                          <td className="text-right py-3 pr-2">${formatNumber(producto.precio * producto.cantidad)}</td>
+                          <td className="text-right py-3 pr-2">${formatNumber(baseUnitaria(producto) * producto.cantidad)}</td>
                         </tr>
                       ))}
                     </tbody>

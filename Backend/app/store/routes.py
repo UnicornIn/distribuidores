@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.auth.routes import get_current_user
 from datetime import datetime
 from bson import ObjectId
-from app.orders.routes import enviar_correo
+from app.orders.routes import calcular_totales_pedido, enviar_correo
 from app.core.database import (
     collection_productos,
     collection_pedidos,
@@ -223,10 +223,17 @@ async def procesar_pedido(
             print(f"📦 Stock actualizado: {producto_id} en {cdi_bodega} de {stock_actual} a {nuevo_stock}")
 
             # ✅ Cálculos
+            # `precio` SIEMPRE es el precio unitario final (con IVA incluido cuando
+            # tipo_precio == "con_iva", porque create-purchase-order lo guarda así) y
+            # `iva_unitario` es la parte de ese precio que corresponde al IVA.
+            # Por eso el IVA nunca se vuelve a sumar al total: solo se separa del
+            # subtotal. Antes las dos ramas estaban invertidas y en los pedidos
+            # "con_iva" el subtotal quedaba con IVA y el total con el IVA sumado
+            # dos veces.
             total_producto = precio * cantidad_final
-            subtotal += (precio - iva_unitario) * cantidad_final if tipo_precio != "con_iva" else precio * cantidad_final
+            subtotal += (precio - iva_unitario) * cantidad_final
             iva_total += iva_unitario * cantidad_final
-            total_orden += total_producto if tipo_precio != "con_iva" else total_producto + iva_unitario * cantidad_final
+            total_orden += total_producto
 
         # Agregar producto a la lista actualizada preservando TODOS los campos originales
         producto_actualizado = {
@@ -562,6 +569,7 @@ async def obtener_ordenes(current_user: dict = Depends(get_current_user)):
                     producto["precio"] = producto.get("precio_sin_iva", producto["precio"])
                     producto["iva_unitario"] = 0
             
+            totales = calcular_totales_pedido(pedido.get("productos", []))
             pedido_formateado = {
                 "id": pedido.get("id", str(pedido["_id"])),
                 "_id": str(pedido["_id"]),
@@ -573,8 +581,10 @@ async def obtener_ordenes(current_user: dict = Depends(get_current_user)):
                 "distribuidor_telefono": info_distribuidor["telefono"],
                 "distribuidor_email": info_distribuidor["email"],
                 "distribuidor_id": pedido["distribuidor_id"],
-                "total": sum(p["precio"] * p["cantidad"] for p in pedido.get("productos", [])),
-                "total_iva": sum(p.get("iva_unitario", 0) * p["cantidad"] for p in pedido.get("productos", []))
+                "subtotal": totales["subtotal"],
+                "iva": totales["iva"],
+                "total": totales["total"],
+                "total_iva": totales["iva"]
             }
             pedidos_formateados.append(pedido_formateado)
         

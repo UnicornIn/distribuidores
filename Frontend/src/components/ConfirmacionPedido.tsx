@@ -65,6 +65,7 @@ export default function ConfirmacionPedido() {
                         <p className="font-medium">{p.nombre}</p>
                         <div className="text-sm text-muted-foreground">
                           Cantidad: {p.cantidad} | ${formatNumber(p.precio)} c/u
+                          {pedido.tipo_precio === "con_iva" && " (IVA incl.)"}
                         </div>
                       </div>
                     </div>
